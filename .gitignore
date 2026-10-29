@@ -1,0 +1,6 @@
+node_modules/
+dist/
+gene_sets/raw/
+.ruff_cache/
+__pycache__/
+.DS_Store
