@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { chanceSubmissions, childrenNeeded, median, percentileBelow } from './caseseries'
+import { chanceSubmissions, individualsNeeded, median, percentileBelow } from './caseseries'
 import { ppoisUpper } from './poisson'
 
-describe('childrenNeeded', () => {
+describe('individualsNeeded', () => {
   // R: qgamma(c(0.5, 0.95), 16) = 15.66793, 23.09713; qgamma(0.5, 1) = log(2)
   it('matches R qgamma divided by the rate', () => {
-    expect(childrenNeeded(16, 1e-5, 0.5)).toBeCloseTo(15.66793 / 1e-5, -1)
-    expect(childrenNeeded(16, 1e-5, 0.95) / (23.09713 / 1e-5)).toBeCloseTo(1, 6)
-    expect(childrenNeeded(1, 1, 0.5)).toBeCloseTo(Math.LN2, 8)
+    expect(individualsNeeded(16, 1e-5, 0.5)).toBeCloseTo(15.66793 / 1e-5, -1)
+    expect(individualsNeeded(16, 1e-5, 0.95) / (23.09713 / 1e-5)).toBeCloseTo(1, 6)
+    expect(individualsNeeded(1, 1, 0.5)).toBeCloseTo(Math.LN2, 8)
   })
   it('gives probability q of reaching k at that cohort size', () => {
-    const mu = 4.5e-5, n = childrenNeeded(16, mu, 0.5)
+    const mu = 4.5e-5, n = individualsNeeded(16, mu, 0.5)
     expect(ppoisUpper(16, n * mu)).toBeCloseTo(0.5, 8)
   })
 })

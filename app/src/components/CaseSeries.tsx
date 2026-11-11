@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { GENE_RATES, GENE_SETS, RATE_GENE_INDEX } from '../data/sources'
 import { parseGeneList, resolveGeneList } from '../lib/genesets'
 import {
-  CASE_CONSEQUENCE_LABELS, chanceSubmissions, childrenNeeded, GENEMATCHER, geneRate, median, percentileBelow,
+  CASE_CONSEQUENCE_LABELS, chanceSubmissions, individualsNeeded, GENEMATCHER, geneRate, median, percentileBelow,
 } from '../lib/caseseries'
 import type { CaseConsequence } from '../lib/caseseries'
 import type { Consequence, Sites } from '../lib/model'
@@ -49,7 +49,7 @@ const times = (r: number) => `${r.toFixed(r < 1 ? 2 : 1)}×`
 interface Props {
   value: CaseState
   onChange: (v: CaseState) => void
-  scale: number | null          // expected DNVs per child per unit of summed roulette rate
+  scale: number | null          // expected DNVs per individual per unit of summed roulette rate
   cohortError: string | null
   cohortDescription: string
   sites: Sites
@@ -106,9 +106,9 @@ export function CaseSeries({ value, onChange, scale, cohortError, cohortDescript
             <input type="number" min={1} max={1000} step={1} value={value.k} onChange={e => set({ k: e.target.value })} />
           </Field>
           <div className="field">
-            <span className="flabel">Children sequenced that the cases could have come from</span>
-            <div className="nval">{fmtN(N)} children</div>
-            <input type="range" min={3} max={8} step={0.01} value={value.log10N} aria-label="Children sequenced (log scale)"
+            <span className="flabel">Individuals sequenced that the cases could have come from</span>
+            <div className="nval">{fmtN(N)} individuals</div>
+            <input type="range" min={3} max={8} step={0.01} value={value.log10N} aria-label="Individuals sequenced (log scale)"
               onChange={e => set({ log10N: Number(e.target.value) })} />
             <div className="presets">
               {PRESETS.map(([n, l]) => (
@@ -158,7 +158,7 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
   const base = genes.length * median(baseline) * scale
   const lam = N * mu
   const p = ppoisUpper(k, lam)
-  const n50 = childrenNeeded(k, mu, 0.5), n95 = childrenNeeded(k, mu, 0.95)
+  const n50 = individualsNeeded(k, mu, 0.5), n95 = individualsNeeded(k, mu, 0.95)
   const baseLabel = genes.length === 1 ? 'Median DDG2P gene' : `${genes.length} median DDG2P genes`
   const gmExp = chanceSubmissions(genes.reduce((s, g) => s + g.rawBoth, 0), exomeRate, GENEMATCHER.humanSubmissions)
 
@@ -168,20 +168,20 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
     <>
       <Panel title="Summary">
         <p className="lede">
-          If <b>{fmtN(N)}</b> children were sequenced, you would expect <b>{fmtE(lam)}</b> {label} <i>de novo</i> variants
+          If <b>{fmtN(N)}</b> individuals were sequenced, you would expect <b>{fmtE(lam)}</b> {label} <i>de novo</i> variants
           in <b>{setName}</b> by chance. Seeing <b>{k}</b> or more by chance has probability <b>{fmtP(p)}</b>. For
-          chance alone to explain {k} cases, about <b>{fmtN(n50)}</b> children would need to have been sequenced.
+          chance alone to explain {k} cases, about <b>{fmtN(n50)}</b> individuals would need to have been sequenced.
         </p>
         <div className="tiles3">
           <div className="tile">
-            <span>Chance rate per child</span><b>{oneIn(mu)}</b>
+            <span>Chance rate per individual</span><b>{oneIn(mu)}</b>
             <div className="det">
               <span className="chip">{times(mu / base)} the {genes.length === 1 ? 'DDG2P median' : `median for ${genes.length} DDG2P genes`}</span>
               {genes.length === 1 && <> {Math.round(100 * percentileBelow(baseline, genes[0].raw))}th percentile</>}
             </div>
           </div>
           <div className="tile">
-            <span>Children needed to see {k} by chance</span><b>{fmtN(n50)}</b>
+            <span>Individuals needed to see {k} by chance</span><b>{fmtN(n50)}</b>
             <div className="det">50% chance. {fmtN(n95)} for 95%. Average: {fmtN(k / mu)}.</div>
           </div>
           <div className="tile key">
@@ -191,7 +191,7 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
         </div>
       </Panel>
 
-      <Panel title="Chance of the case series against children sequenced">
+      <Panel title="Chance of the case series against individuals sequenced">
         <CaseChart k={k} N={N} mu={mu} base={base} />
         <div className="legend">
           <span><i />{setName}, {label}</span>
@@ -203,7 +203,7 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
       {genes.length > 1 && (
         <Panel title="Per gene">
           <div className="scroll"><table>
-            <thead><tr><th>Gene</th><th>Chance rate per child</th><th>vs DDG2P median</th><th>DDG2P percentile</th><th>Share of set</th></tr></thead>
+            <thead><tr><th>Gene</th><th>Chance rate per individual</th><th>vs DDG2P median</th><th>DDG2P percentile</th><th>Share of set</th></tr></thead>
             <tbody>
               {[...genes].sort((a, b) => b.raw - a.raw).map(g => (
                 <tr key={g.gene}>
@@ -249,12 +249,12 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
       <details className="panel method">
         <summary>How these numbers are calculated</summary>
         <p>
-          μ is the expected number of <i>de novo</i> variants of the chosen type per child, summed over the genes: each
+          μ is the expected number of <i>de novo</i> variants of the chosen type per individual, summed over the genes: each
           gene's summed Roulette rate times the deCODE calibration averaged over deCODE's own paternal age mix
-          (Σ k<sub>bin</sub> / Σ probands<sub>bin</sub>). In N children the chance count is Poisson(Nμ).
+          (Σ k<sub>bin</sub> / Σ probands<sub>bin</sub>). In N individuals the chance count is Poisson(Nμ).
         </p>
         <p>
-          P(≥ k by chance) is the Poisson upper tail. The children needed for probability q of reaching k is
+          P(≥ k by chance) is the Poisson upper tail. The individuals needed for probability q of reaching k is
           N<sub>q</sub> = qgamma(q, shape = k) / μ, because P(Poisson(λ) ≥ k) = P(Gamma(k, 1) ≤ λ).
         </p>
         <p>
@@ -270,8 +270,8 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
 function CaseChart({ k, N, mu, base }: { k: number; N: number; mu: number; base: number }) {
   const W = 720, H = 300, L = 52, R = 16, T = 14, B = 44
   const fast = Math.max(mu, base), slow = Math.min(mu, base)
-  const x0 = Math.min(3, Math.floor(Math.log10(Math.min(N, childrenNeeded(k, fast, 0.01)))))
-  const x1 = Math.max(8, Math.ceil(Math.log10(Math.max(N, childrenNeeded(k, slow, 0.5) * 20))))
+  const x0 = Math.min(3, Math.floor(Math.log10(Math.min(N, individualsNeeded(k, fast, 0.01)))))
+  const x1 = Math.max(8, Math.ceil(Math.log10(Math.max(N, individualsNeeded(k, slow, 0.5) * 20))))
   const sx = (v: number) => L + (Math.log10(v) - x0) / (x1 - x0) * (W - L - R)
   const sy = (p: number) => T + (1 - p) * (H - T - B)
   const path = (r: number) => Array.from({ length: 241 }, (_, i) => {
@@ -287,7 +287,7 @@ function CaseChart({ k, N, mu, base }: { k: number; N: number; mu: number; base:
   return (
     <div className="scroll">
       <svg className="case-chart" viewBox={`0 0 ${W} ${H}`} role="img"
-        aria-label={`Probability of at least ${k} by chance against children sequenced`}>
+        aria-label={`Probability of at least ${k} by chance against individuals sequenced`}>
         {[0, 0.25, 0.5, 0.75, 1].map(v => (
           <g key={v}>
             <line x1={L} x2={W - R} y1={sy(v)} y2={sy(v)} stroke="var(--line)" />
@@ -300,7 +300,7 @@ function CaseChart({ k, N, mu, base }: { k: number; N: number; mu: number; base:
             <text x={sx(10 ** e)} y={H - B + 17} textAnchor="middle" className="ax">{tick(e)}</text>
           </g>
         ))}
-        <text x={(L + W - R) / 2} y={H - 6} textAnchor="middle" className="ax lg">Children sequenced (log scale)</text>
+        <text x={(L + W - R) / 2} y={H - 6} textAnchor="middle" className="ax lg">Individuals sequenced (log scale)</text>
         <text x={12} y={ymid} transform={`rotate(-90 12 ${ymid})`} textAnchor="middle" className="ax lg">P(≥ {k} by chance)</text>
         {Math.log10(DDD) > x0 && Math.log10(DDD) < x1 && (
           <g>

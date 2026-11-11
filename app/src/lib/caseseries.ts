@@ -1,9 +1,9 @@
 // Case-series and GeneMatcher chance calculations.
 //
 // mu is the expected number of de novo variants of a chosen type in a gene (or gene
-// set) per child. In N sequenced children the chance count is Poisson(N * mu), so
+// set) per individual. In N sequenced individuals the chance count is Poisson(N * mu), so
 //   P(>= k by chance) = ppoisUpper(k, N * mu)
-//   children needed for probability q of >= k = qgamma(q, k) / mu
+//   individuals needed for probability q of >= k = qgamma(q, k) / mu
 // because P(Poisson(lambda) >= k) = P(Gamma(k, 1) <= lambda).
 
 import { qgamma } from './poisson'
@@ -23,7 +23,7 @@ export const GENEMATCHER = {
   url: 'https://genematcher.org/statistics/',
 }
 
-// summed roulette rate for one gene and variant type (multiply by the per-child scale)
+// summed roulette rate for one gene and variant type (multiply by the per-individual scale)
 export function geneRate(g: GeneRates, sites: Sites, lof: Consequence[], cons: CaseConsequence): number {
   const r = g[sites]
   const mis = r.missense
@@ -31,7 +31,7 @@ export function geneRate(g: GeneRates, sites: Sites, lof: Consequence[], cons: C
   return cons === 'mis' ? mis : cons === 'lof' ? l : mis + l
 }
 
-export function childrenNeeded(k: number, mu: number, q: number): number {
+export function individualsNeeded(k: number, mu: number, q: number): number {
   return qgamma(q, k) / mu
 }
 
