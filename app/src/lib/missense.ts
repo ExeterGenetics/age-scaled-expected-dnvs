@@ -1,7 +1,9 @@
 // Missense score filter. missense_score_bins.tsv (build_missense_scores.py) holds, per
-// gene and score, the missense roulette rate in 20 bins of width 0.05 plus an unscored
-// bin, in units of 0.001 MR, for high-quality and all sites. The rate with score >= t
-// (t on the 0.05 grid) is the sum of bins t*20..19; unscored sites never pass.
+// gene and score, the missense roulette rate binned at score edges (the 0.05 grid plus the
+// published cutoffs) plus an unscored bin, in units of 0.001 MR, for high-quality and all
+// sites. Columns are named by each bin's lower edge (hq_0.5641), so the edges are read from
+// the header. The rate with score >= an edge is the sum of the bins from that edge up;
+// unscored sites never pass.
 
 import type { GeneRates, Sites } from './model'
 
@@ -11,54 +13,76 @@ export const MISSENSE_SCORES = {
 } as const
 export type MissenseScore = keyof typeof MISSENSE_SCORES
 
-export const NBINS = 20
-export const SCORE_STEP = 1 / NBINS
+export const SCORE_STEP = 0.05
 
-// threshold suggested when a score is first chosen, and published calibrated cutoffs
-export const SCORE_DEFAULT_THRESHOLD: Record<MissenseScore, number> = { am: 0.55, revel: 0.65 }
-export const SCORE_CUTOFFS: Record<MissenseScore, string> = {
-  am: 'AlphaMissense calls > 0.564 likely pathogenic and < 0.34 likely benign.',
-  revel: 'ClinGen PP3 cutoffs for REVEL: supporting ≥ 0.644, moderate ≥ 0.773, strong ≥ 0.932.',
+// Published cutoffs, offered as one-click thresholds. Each must be a bin edge in the TSV.
+// AlphaMissense (Cheng et al. 2023): likely benign < 0.34, likely pathogenic > 0.564; scores
+// have 4 decimals, so "> 0.564" is ">= 0.5641". REVEL: ClinGen PP3 (Pejaver et al. 2022).
+export interface Cutoff { t: number; label: string; name: string }
+export const SCORE_CUTOFFS: Record<MissenseScore, Cutoff[]> = {
+  am: [
+    { t: 0.34, label: '≥ 0.34', name: 'not likely benign' },
+    { t: 0.5641, label: '> 0.564', name: 'likely pathogenic' },
+  ],
+  revel: [
+    { t: 0.644, label: '≥ 0.644', name: 'PP3 supporting' },
+    { t: 0.773, label: '≥ 0.773', name: 'PP3 moderate' },
+    { t: 0.932, label: '≥ 0.932', name: 'PP3 strong' },
+  ],
 }
+export const SCORE_CUTOFF_SOURCE: Record<MissenseScore, string> = {
+  am: 'AlphaMissense classes (Cheng et al. 2023): likely benign < 0.34, likely pathogenic > 0.564.',
+  revel: 'ClinGen PP3 cutoffs for REVEL (Pejaver et al. 2022): supporting ≥ 0.644, moderate ≥ 0.773, strong ≥ 0.932.',
+}
+// threshold used when a score is first chosen: its pathogenic cutoff
+export const SCORE_DEFAULT_THRESHOLD: Record<MissenseScore, number> = { am: 0.5641, revel: 0.644 }
 
 export interface MissenseFilter {
   score: MissenseScore | 'none'
-  threshold: number  // multiple of SCORE_STEP in [0, 0.95]
+  threshold: number  // a bin edge
 }
 export const NO_FILTER: MissenseFilter = { score: 'none', threshold: SCORE_DEFAULT_THRESHOLD.am }
 
-// per gene: bins 0..19, then unscored at index NBINS, for each site set
+// per gene: one value per bin (ascending edges), then unscored at index edges.length
 export type ScoreBins = Record<Sites, number[]>
-export type MissenseBins = Record<MissenseScore, Map<string, ScoreBins>>
+export type MissenseBins = { edges: number[] } & Record<MissenseScore, Map<string, ScoreBins>>
 
 export function parseMissenseBins(text: string): MissenseBins {
   const [head, ...lines] = text.trim().split('\n')
   const cols = head.split('\t')
+  const edgeNames = cols.filter(c => /^hq_\d/.test(c)).map(c => c.slice(3))
+  const edges = edgeNames.map(Number)
+  if (edges.length === 0 || edges[0] !== 0 || edges.some((e, i) => i > 0 && !(e > edges[i - 1]))) {
+    throw new Error('missense_score_bins.tsv bin edges must start at 0 and increase')
+  }
   const ix = (prefix: string) =>
-    [...Array.from({ length: NBINS }, (_, i) => `${prefix}_${i}`), `${prefix}_u`].map(c => {
+    [...edgeNames.map(e => `${prefix}_${e}`), `${prefix}_u`].map(c => {
       const i = cols.indexOf(c)
       if (i < 0) throw new Error(`missense_score_bins.tsv is missing column ${c}`)
       return i
     })
   const hqIx = ix('hq'), allIx = ix('all')
   const scoreCol = cols.indexOf('score')
-  const out: MissenseBins = { am: new Map(), revel: new Map() }
+  const out: MissenseBins = { edges, am: new Map(), revel: new Map() }
   for (const line of lines) {
     const f = line.split('\t')
     const score = f[scoreCol] as MissenseScore
-    if (!(score in out)) throw new Error(`unknown score ${score} in missense_score_bins.tsv`)
+    if (!(score in MISSENSE_SCORES)) throw new Error(`unknown score ${score} in missense_score_bins.tsv`)
     out[score].set(f[0], { hq: hqIx.map(i => Number(f[i]) / 1000), all: allIx.map(i => Number(f[i]) / 1000) })
   }
   return out
 }
 
-export function binIndex(threshold: number): number {
-  return Math.min(NBINS - 1, Math.max(0, Math.round(threshold * NBINS)))
+// index of the highest edge at or below the threshold
+export function binIndex(edges: number[], threshold: number): number {
+  let i = 0
+  while (i + 1 < edges.length && edges[i + 1] <= threshold + 1e-9) i++
+  return i
 }
 
-export function rateAtOrAbove(bins: number[], threshold: number): number {
+export function rateAtOrAbove(bins: number[], edges: number[], threshold: number): number {
   let s = 0
-  for (let i = binIndex(threshold); i < NBINS; i++) s += bins[i]
+  for (let i = binIndex(edges, threshold); i < edges.length; i++) s += bins[i]
   return s
 }
 
@@ -71,8 +95,8 @@ export function applyMissenseFilter(genes: GeneRates[], bins: MissenseBins, f: M
     const b = table.get(g.gene)
     return {
       ...g,
-      hq: { ...g.hq, missense: b ? rateAtOrAbove(b.hq, f.threshold) : 0 },
-      all: { ...g.all, missense: b ? rateAtOrAbove(b.all, f.threshold) : 0 },
+      hq: { ...g.hq, missense: b ? rateAtOrAbove(b.hq, bins.edges, f.threshold) : 0 },
+      all: { ...g.all, missense: b ? rateAtOrAbove(b.all, bins.edges, f.threshold) : 0 },
     }
   })
 }
@@ -82,25 +106,35 @@ export function filterShares(
   genes: Iterable<string>, bins: MissenseBins, f: MissenseFilter, sites: Sites,
 ): { scored: number; passing: number } {
   if (f.score === 'none') return { scored: 1, passing: 1 }
+  const n = bins.edges.length
   let scored = 0, passing = 0, total = 0
   for (const g of genes) {
     const b = bins[f.score].get(g)?.[sites]
     if (!b) continue
-    for (let i = 0; i < NBINS; i++) scored += b[i]
-    total += b[NBINS]
-    passing += rateAtOrAbove(b, f.threshold)
+    for (let i = 0; i < n; i++) scored += b[i]
+    total += b[n]
+    passing += rateAtOrAbove(b, bins.edges, f.threshold)
   }
   total += scored
   return total > 0 ? { scored: scored / total, passing: passing / total } : { scored: 0, passing: 0 }
 }
 
+// the published cutoff at this threshold, if it is one
+export function cutoffAt(score: MissenseScore, threshold: number): Cutoff | undefined {
+  return SCORE_CUTOFFS[score].find(c => Math.abs(c.t - threshold) < 1e-9)
+}
+
+export function thresholdLabel(score: MissenseScore, threshold: number): string {
+  return cutoffAt(score, threshold)?.label ?? `≥ ${threshold.toFixed(2)}`
+}
+
 export function filterLabel(f: MissenseFilter): string {
-  return f.score === 'none' ? '' : `${MISSENSE_SCORES[f.score]} ≥ ${f.threshold.toFixed(2)}`
+  return f.score === 'none' ? '' : `${MISSENSE_SCORES[f.score]} ${thresholdLabel(f.score, f.threshold)}`
 }
 
 const SHORT: Record<MissenseScore, string> = { am: 'AM', revel: 'REVEL' }
 export function filterShortLabel(f: MissenseFilter): string {
-  return f.score === 'none' ? '' : `${SHORT[f.score]} ≥ ${f.threshold.toFixed(2)}`
+  return f.score === 'none' ? '' : `${SHORT[f.score]} ${thresholdLabel(f.score, f.threshold)}`
 }
 
 // genes with missense sites but less than minShare of their missense rate scored: their
@@ -108,11 +142,12 @@ export function filterShortLabel(f: MissenseFilter): string {
 export function poorlyScoredGenes(bins: MissenseBins, f: MissenseFilter, sites: Sites, minShare = 0.5): Set<string> {
   const out = new Set<string>()
   if (f.score === 'none') return out
+  const n = bins.edges.length
   for (const [gene, b] of bins[f.score]) {
     const v = b[sites]
     let scored = 0
-    for (let i = 0; i < NBINS; i++) scored += v[i]
-    const total = scored + v[NBINS]
+    for (let i = 0; i < n; i++) scored += v[i]
+    const total = scored + v[n]
     if (total > 0 && scored < minShare * total) out.add(gene)
   }
   return out

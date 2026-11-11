@@ -29,6 +29,12 @@ const REFS = [
     journal: 'Am J Hum Genet 99, 877–885 (2016).',
     doi: '10.1016/j.ajhg.2016.08.016',
   },
+  {
+    id: 6,
+    text: 'Pejaver V, Byrne AB, Feng BJ, et al. Calibration of computational tools for missense variant pathogenicity classification and ClinGen recommendations for PP3/BP4 criteria.',
+    journal: 'Am J Hum Genet 109, 2163–2177 (2022).',
+    doi: '10.1016/j.ajhg.2022.10.013',
+  },
 ]
 
 // Scrolls rather than following a #link, which sandboxed previews can block
@@ -119,7 +125,9 @@ export function About() {
         <dt>Missense score filter</dt>
         <dd>
           Restricts missense variants to sites with an AlphaMissense<Cite n={4} /> or REVEL<Cite n={5} /> score at or
-          above a threshold, in steps of 0.05. Each possible missense SNV takes the highest score listed for that
+          above a threshold: the published cutoffs (AlphaMissense likely benign &lt; 0.34 and likely pathogenic
+          &gt; 0.564<Cite n={4} />; REVEL ClinGen PP3 supporting ≥ 0.644, moderate ≥ 0.773, strong ≥ 0.932<Cite n={6} />)
+          or any step of 0.05. Each possible missense SNV takes the highest score listed for that
           change (scores are given per transcript), and sites with no score are left out, so the expected count
           falls to the rate of passing sites. Use it with observed counts filtered the same way. It applies on both
           tabs. LoF and synonymous counts are unchanged. REVEL positions are GRCh38 coordinates from the REVEL v1.3 file.

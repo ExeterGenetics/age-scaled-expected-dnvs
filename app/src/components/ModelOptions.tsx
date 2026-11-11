@@ -1,6 +1,6 @@
 import { BACKGROUNDS, BIN_LABELS, BINS, LOF_OPTIONS } from '../lib/model'
 import type { Background, Consequence, PerBin, Sites } from '../lib/model'
-import { MISSENSE_SCORES, SCORE_CUTOFFS, SCORE_DEFAULT_THRESHOLD, SCORE_STEP } from '../lib/missense'
+import { cutoffAt, MISSENSE_SCORES, SCORE_CUTOFF_SOURCE, SCORE_CUTOFFS, SCORE_DEFAULT_THRESHOLD, SCORE_STEP, thresholdLabel } from '../lib/missense'
 import type { MissenseFilter, MissenseScore } from '../lib/missense'
 import { Field } from './ui'
 
@@ -95,12 +95,20 @@ export function MissenseFilterField({ value, onChange, shares }: MissenseFilterF
               aria-label={`${MISSENSE_SCORES[value.score]} threshold`}
               onChange={e => onChange({ ...value, threshold: Number(e.target.value) })}
             />
-            <b>≥ {value.threshold.toFixed(2)}</b>
+            <b>{thresholdLabel(value.score, value.threshold)}</b>
+          </div>
+          <div className="presets cutoffs" role="group" aria-label="Published cutoffs">
+            {SCORE_CUTOFFS[value.score].map(c => (
+              <button
+                type="button" key={c.t} aria-pressed={cutoffAt(value.score as MissenseScore, value.threshold) === c}
+                onClick={() => onChange({ ...value, threshold: c.t })}
+              >{c.name} <span>{c.label}</span></button>
+            ))}
           </div>
           <p className="hint">
-            Only missense sites scoring at or above this count; sites with no score are left out.
+            Only missense sites passing this count; sites with no score are left out.
             {shares && <> Here {pct(shares.passing)} of the missense rate passes ({pct(shares.scored)} has a score).</>}
-            {' '}{SCORE_CUTOFFS[value.score]} Steps of 0.05.
+            {' '}{SCORE_CUTOFF_SOURCE[value.score]} Use the buttons for these, or the slider for steps of 0.05.
           </p>
           {shares && shares.scored < 0.5 && (
             <p className="hint warn">

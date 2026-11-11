@@ -15,7 +15,7 @@ The About tab in the app explains the method, options and caveats.
 |---|---|
 | `app/` | React + Vite app. `npm run build` writes one self-contained `app/dist/index.html` with all data inlined, which also works opened straight from disk. |
 | `gene_rates.tsv` | Roulette rate summed per gene (MANE Select) and consequence, for high-quality and all sites. Built by `build_gene_rates.py`. |
-| `missense_score_bins.tsv` | Missense Roulette rate per gene in 0.05-wide AlphaMissense and REVEL score bins (plus unscored), for the missense score filter. Built by `build_missense_scores.py`. |
+| `missense_score_bins.tsv` | Missense Roulette rate per gene in AlphaMissense and REVEL score bins, edged at every 0.05 and at the published cutoffs (AM 0.34, > 0.564; REVEL PP3 0.644, 0.773, 0.932), plus unscored, for the missense score filter. Built by `build_missense_scores.py`. |
 | `gene_sets/gene_sets.json` | Pre-built gene sets and an HGNC alias map. Built by `build_gene_sets.py`. |
 | `data/scaling_factors_pat_only.tsv` | Calibration factor k per paternal age group, for the intergenic, synonymous and all-coding backgrounds. |
 

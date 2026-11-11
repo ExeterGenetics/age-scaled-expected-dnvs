@@ -4,15 +4,23 @@ Missense sites are taken from the MANE-annotated coding VCFs exactly as in
 build_gene_rates.py (a site counts for a gene when missense is its most severe
 consequence there). Each site gets the maximum score over the score file's rows
 for that chrom/pos/ref/alt (several transcripts can score the same change).
-Scores are binned in 0.05 steps, bin j holding scores in [j/20, (j+1)/20), the
-last bin closed at 1, so the rate with score >= j/20 is the sum of bins j..19.
-Sites with no score go to a separate "unscored" column and never pass a
-threshold.
+Scores are binned at EDGES: the 0.05 grid plus the published cutoffs, so every
+edge is an exact threshold. Bin i holds scores in [EDGES[i], EDGES[i+1]), the
+last bin closed at 1, so the rate with score >= EDGES[i] is the sum of bins
+i..end. Sites with no score go to a separate "unscored" column and never pass
+a threshold. Both scores share the edges, so some bins are unused by one score.
 
-Output: one row per gene and score, with 20 binned sums and the unscored sum for
-high-quality sites (hq_*) and for all sites (all_*), as integers in units of
-0.001 roulette MR (the VCF precision). Each row's 21 hq_* (or all_*) values sum
-to that gene's hq_missense (or all_missense) in gene_rates.tsv, up to rounding.
+Published cutoffs:
+  AlphaMissense (Cheng et al. 2023): likely benign < 0.34, likely pathogenic
+    > 0.564. Scores have 4 decimals, so "> 0.564" is the edge 0.5641.
+  REVEL, ClinGen PP3 (Pejaver et al. 2022): supporting >= 0.644, moderate
+    >= 0.773, strong >= 0.932.
+
+Output: one row per gene and score, with one column per bin named by its lower
+edge (hq_0.5641 etc.) and the unscored sum (hq_u), for high-quality sites (hq_*)
+and for all sites (all_*), as integers in units of 0.001 roulette MR (the VCF
+precision). Each row's hq_* (or all_*) values sum to that gene's hq_missense
+(or all_missense) in gene_rates.tsv, up to rounding.
 
 Usage:
   python build_missense_scores.py ../roulette_MANEannotated_coding_regions \
@@ -28,7 +36,8 @@ import polars as pl
 from build_gene_rates import HQ_FILTERS, RANK
 
 MISSENSE = RANK["missense"]
-NBINS = 20
+CUTOFFS = [0.34, 0.5641, 0.644, 0.773, 0.932]
+EDGES = sorted(set([round(i / 20, 4) for i in range(20)] + CUTOFFS))
 KEY = ["chrom", "pos", "ref", "alt"]
 
 
@@ -105,10 +114,13 @@ def bin_by_gene(sites, scores, name):
     print("%s: %d of %d missense site-gene pairs scored" % (name, scored, len(j)))
     j = j.with_columns(
         pl.when(pl.col("score").is_null()).then(pl.lit("u"))
-          .otherwise((pl.col("score") * NBINS + 1e-9).floor().clip(0, NBINS - 1)
-                     .cast(pl.Int64).cast(pl.Utf8))
+          .otherwise(pl.sum_horizontal([(pl.col("score") + 1e-9 >= e).cast(pl.Int64)
+                                        for e in EDGES[1:]]).cast(pl.Utf8))
           .alias("bin"))
-    cols = [str(i) for i in range(NBINS)] + ["u"]
+    # bin i -> column named by its lower edge
+    names = {str(i): "%.4f" % e for i, e in enumerate(EDGES)}
+    j = j.with_columns(pl.col("bin").replace(names))
+    cols = list(names.values()) + ["u"]
     out = []
     for prefix, frame in (("hq", j.filter(pl.col("hq"))), ("all", j)):
         w = (frame.group_by(["gene", "bin"]).agg(pl.col("mr_milli").sum())
