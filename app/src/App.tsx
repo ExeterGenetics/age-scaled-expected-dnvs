@@ -111,8 +111,12 @@ export function App() {
     () => Object.fromEntries(BINS.map(b => [b, k[b] / nDecode[b]])) as PerBin,
     [k, nDecode],
   )
-  // expected DNVs per child per unit of summed roulette rate, for the case-series tab
-  const perChildScale = error || 'error' in cohort ? null : cohortScale(cohort.counts, k, nDecode) / cohort.n
+  // Case-series tab: expected DNVs per child per unit of summed roulette rate for deCODE's
+  // own paternal-age mix (a population-typical reference, independent of the user's cohort),
+  // i.e. sum_b k_b / sum_b N_deCODE_b
+  const nDecodeTotal = BINS.reduce((s, b) => s + nDecode[b], 0)
+  const caseError = badN.length ? `deCODE proband counts must be above zero (${badN.map(b => BIN_LABELS[b]).join(', ')}).` : null
+  const perChildScale = caseError ? null : cohortScale(nDecode, k, nDecode) / nDecodeTotal
   const rows = useMemo(() => {
     if (error || 'error' in cohort) return []
     return expectedPerGene(GENE_RATES, cohortScale(cohort.counts, k, nDecode), sites, lof)
@@ -178,8 +182,8 @@ export function App() {
       {page === 'about' ? <About /> : page === 'case-series' ? (
         <CaseSeries
           value={caseState} onChange={setCaseState}
-          scale={perChildScale} cohortError={error}
-          cohortDescription={'error' in cohort ? '' : cohort.description}
+          scale={perChildScale} cohortError={caseError}
+          cohortDescription={`deCODE's paternal age mix (${BINS.map(b => `${BIN_LABELS[b]}: ${nDecode[b].toLocaleString()}`).join(', ')} probands)`}
           sites={sites} lof={lof} onCalculator={() => goTo('calculator')}
         />
       ) : <div className="grid">

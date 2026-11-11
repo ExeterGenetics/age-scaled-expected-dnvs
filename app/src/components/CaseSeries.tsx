@@ -118,16 +118,16 @@ export function CaseSeries({ value, onChange, scale, cohortError, cohortDescript
             <p className="hint">A guess is fine. The chart shows how much the answer depends on it.</p>
           </div>
           <p className="hint">
-            Rates use the paternal ages and model set on the{' '}
-            <button type="button" className="linklike" onClick={onCalculator}>Calculator</button> tab
-            {cohortError ? '.' : <>: {cohortDescription}.</>}
+            Rates use {cohortDescription}, not the ages on the Calculator tab, since published cases
+            come from many cohorts. Background, sites and LoF classes follow the{' '}
+            <button type="button" className="linklike" onClick={onCalculator}>Calculator</button> tab's model settings.
           </p>
         </Panel>
       </div>
 
       <div className="stack">
         {cohortError || scale === null ? (
-          <Panel title="Summary"><p className="err" role="alert">{cohortError ?? 'Set paternal ages on the Calculator tab.'}</p></Panel>
+          <Panel title="Summary"><p className="err" role="alert">{cohortError ?? 'Check the model settings on the Calculator tab.'}</p></Panel>
         ) : genes.length === 0 ? (
           <Panel title="Summary"><p className="hint">Enter at least one gene.</p></Panel>
         ) : (
@@ -250,8 +250,8 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
         <summary>How these numbers are calculated</summary>
         <p>
           μ is the expected number of <i>de novo</i> variants of the chosen type per child, summed over the genes: each
-          gene's summed Roulette rate times the deCODE calibration for the Calculator tab's paternal ages, per
-          individual. In N children the chance count is Poisson(Nμ).
+          gene's summed Roulette rate times the deCODE calibration averaged over deCODE's own paternal age mix
+          (Σ k<sub>bin</sub> / Σ probands<sub>bin</sub>). In N children the chance count is Poisson(Nμ).
         </p>
         <p>
           P(≥ k by chance) is the Poisson upper tail. The children needed for probability q of reaching k is

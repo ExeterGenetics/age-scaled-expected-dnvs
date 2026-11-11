@@ -142,3 +142,6 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .method p { font-size: 12px; color: var(--muted); max-width: 80ch; }
 .hint a { color: var(--accent); }
 .stack .panel > .hint + .field { margin-top: 10px; }
+.observed summary { display: inline-block; font-size: 14px; padding: 7px 14px; border: 1px solid var(--accent);
+  border-radius: 6px; background: var(--panel); }
+.observed summary:hover { background: var(--expected-bg); }
