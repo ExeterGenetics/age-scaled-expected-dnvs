@@ -28,9 +28,11 @@ function compare(key: SortKey) {
 interface GeneTableProps {
   rows: GeneExpected[]
   onDownload: () => void
+  misQualifier: string
+  unscored?: Set<string>  // genes whose filtered missense is mostly unscored
 }
 
-export function GeneTable({ rows, onDownload }: GeneTableProps) {
+export function GeneTable({ rows, onDownload, misQualifier, unscored }: GeneTableProps) {
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'lof', dir: -1 })
   const deferredQuery = useDeferredValue(query)
@@ -76,7 +78,7 @@ export function GeneTable({ rows, onDownload }: GeneTableProps) {
               aria-sort={sort.key === c.key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'}
               onClick={() => onSort(c.key)}
             >
-              {c.label}{sort.key === c.key ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}
+              {c.key === 'mis' && misQualifier ? `${c.label} (${misQualifier})` : c.label}{sort.key === c.key ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}
             </button>
           ))}
         </div>
@@ -92,7 +94,9 @@ export function GeneTable({ rows, onDownload }: GeneTableProps) {
                   <span role="cell" className="gcell">{r.gene}</span>
                   <span role="cell" className="gcell">{r.chrom}</span>
                   <span role="cell" className="gcell">{fmt(r.syn)}</span>
-                  <span role="cell" className="gcell">{fmt(r.mis)}</span>
+                  {unscored?.has(r.gene)
+                    ? <span role="cell" className="gcell unscored" title="Most of this gene's missense sites have no score, so this filtered value is not meaningful">{fmt(r.mis)}*</span>
+                    : <span role="cell" className="gcell">{fmt(r.mis)}</span>}
                   <span role="cell" className="gcell">{fmt(r.lof)}</span>
                 </div>
               )

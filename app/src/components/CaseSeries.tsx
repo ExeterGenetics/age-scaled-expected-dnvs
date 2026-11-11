@@ -1,11 +1,14 @@
 import { useMemo } from 'react'
-import { GENE_RATES, GENE_SETS, RATE_GENE_INDEX } from '../data/sources'
+import { GENE_SETS, MISSENSE_BINS, RATE_GENE_INDEX } from '../data/sources'
+import { filterLabel, filterShares } from '../lib/missense'
+import type { MissenseFilter } from '../lib/missense'
+import { MissenseFilterField } from './ModelOptions'
 import { parseGeneList, resolveGeneList } from '../lib/genesets'
 import {
-  CASE_CONSEQUENCE_LABELS, chanceSubmissions, individualsNeeded, GENEMATCHER, geneRate, median, percentileBelow,
+  CASE_CONSEQUENCE_LABELS, chanceMatches, individualsNeeded, MME, MME_CASES, geneRate, median, percentileBelow,
 } from '../lib/caseseries'
 import type { CaseConsequence } from '../lib/caseseries'
-import type { Consequence, Sites } from '../lib/model'
+import type { Consequence, GeneRates, Sites } from '../lib/model'
 import { ppoisUpper } from '../lib/poisson'
 import { Field, Panel, Segmented } from './ui'
 
@@ -55,9 +58,14 @@ interface Props {
   sites: Sites
   lof: Consequence[]
   onCalculator: () => void
+  rates: GeneRates[]              // missense already restricted by the score filter
+  missense: MissenseFilter
+  onMissense: (f: MissenseFilter) => void
 }
 
-export function CaseSeries({ value, onChange, scale, cohortError, cohortDescription, sites, lof, onCalculator }: Props) {
+export function CaseSeries({
+  value, onChange, scale, cohortError, cohortDescription, sites, lof, onCalculator, rates, missense, onMissense,
+}: Props) {
   const set = (patch: Partial<CaseState>) => onChange({ ...value, ...patch })
   const { cons } = value
   const k = Math.max(1, Math.round(Number(value.k) || 1))
@@ -68,20 +76,20 @@ export function CaseSeries({ value, onChange, scale, cohortError, cohortDescript
     () => resolveGeneList(parseGeneList(value.genesText), RATE_GENE_INDEX, GENE_SETS.aliases),
     [value.genesText],
   )
-  const byGene = useMemo(() => new Map(GENE_RATES.map(g => [g.gene, g])), [])
+  const byGene = useMemo(() => new Map(rates.map(g => [g.gene, g])), [rates])
   const baseline = useMemo(() => {
     const ids = new Set(GENE_SETS.sets.find(s => s.id === BASELINE_SET)?.genes ?? [])
-    return GENE_RATES.filter(g => ids.has(g.gene)).map(g => geneRate(g, sites, lof, cons)).sort((a, b) => a - b)
-  }, [sites, lof, cons])
-  const exomeRate = useMemo(
-    () => GENE_RATES.reduce((s, g) => s + geneRate(g, sites, lof, 'both'), 0), [sites, lof],
-  )
+    return rates.filter(g => ids.has(g.gene)).map(g => geneRate(g, sites, lof, cons)).sort((a, b) => a - b)
+  }, [rates, sites, lof, cons])
 
   const genes = resolved.genes.map(g => {
     const r = byGene.get(g)!
     return { gene: g, raw: geneRate(r, sites, lof, cons), rawBoth: geneRate(r, sites, lof, 'both') }
   })
-  const label = CASE_CONSEQUENCE_LABELS[cons]
+  const q = filterLabel(missense)
+  const usesMissense = cons !== 'lof'
+  const label = CASE_CONSEQUENCE_LABELS[cons] + (q && usesMissense ? ` (missense ${q})` : '')
+  const shares = missense.score === 'none' ? null : filterShares(resolved.genes, MISSENSE_BINS, missense, sites)
   const setName = genes.length === 1 ? genes[0].gene : `these ${genes.length} genes`
 
   return (
@@ -102,6 +110,7 @@ export function CaseSeries({ value, onChange, scale, cohortError, cohortDescript
             <Segmented<CaseConsequence> label="Variant type" value={cons} onChange={c => set({ cons: c })}
               options={[{ value: 'mis', label: 'Missense' }, { value: 'lof', label: 'LoF' }, { value: 'both', label: 'Both' }]} />
           </div>
+          {usesMissense && <MissenseFilterField value={missense} onChange={onMissense} shares={shares} />}
           <Field label="Patients in the case series">
             <input type="number" min={1} max={1000} step={1} value={value.k} onChange={e => set({ k: e.target.value })} />
           </Field>
@@ -119,7 +128,7 @@ export function CaseSeries({ value, onChange, scale, cohortError, cohortDescript
           </div>
           <p className="hint">
             Rates use {cohortDescription}, not the ages on the Calculator tab, since published cases
-            come from many cohorts. Background, sites and LoF classes follow the{' '}
+            come from many cohorts. Background, sites, LoF classes and the missense filter are shared with the{' '}
             <button type="button" className="linklike" onClick={onCalculator}>Calculator</button> tab's model settings.
           </p>
         </Panel>
@@ -131,7 +140,7 @@ export function CaseSeries({ value, onChange, scale, cohortError, cohortDescript
         ) : genes.length === 0 ? (
           <Panel title="Summary"><p className="hint">Enter at least one gene.</p></Panel>
         ) : (
-          <Results {...{ genes, scale, k, N, matches, baseline, exomeRate, setName, label }}
+          <Results {...{ genes, scale, k, N, matches, baseline, setName, label }} gmLabel={q ? `missense (${q}) or LoF` : 'missense or LoF'}
             onMatches={m => set({ matches: m })} matchesText={value.matches} />
         )}
       </div>
@@ -148,19 +157,19 @@ interface ResultsProps {
   matchesText: string
   onMatches: (m: string) => void
   baseline: number[]
-  exomeRate: number
   setName: string
   label: string
+  gmLabel: string
 }
 
-function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline, exomeRate, setName, label }: ResultsProps) {
+function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline, setName, label, gmLabel }: ResultsProps) {
   const mu = genes.reduce((s, g) => s + g.raw, 0) * scale
   const base = genes.length * median(baseline) * scale
   const lam = N * mu
   const p = ppoisUpper(k, lam)
   const n50 = individualsNeeded(k, mu, 0.5), n95 = individualsNeeded(k, mu, 0.95)
   const baseLabel = genes.length === 1 ? 'Median DDG2P gene' : `${genes.length} median DDG2P genes`
-  const gmExp = chanceSubmissions(genes.reduce((s, g) => s + g.rawBoth, 0), exomeRate, GENEMATCHER.humanSubmissions)
+  const gmExp = chanceMatches(genes.reduce((s, g) => s + g.rawBoth, 0) * scale, MME_CASES)
 
   if (!(mu > 0)) return <Panel title="Summary"><p className="hint">These genes have no {label} sites with rates.</p></Panel>
 
@@ -219,31 +228,45 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
         </Panel>
       )}
 
-      <Panel title="GeneMatcher matches by chance">
+      <Panel title="Matchmaker Exchange matches by chance">
         <p className="lede">
-          GeneMatcher held <b>{GENEMATCHER.humanSubmissions.toLocaleString()}</b> human submissions on {GENEMATCHER.date}.
-          If each were a random missense or LoF <i>de novo</i> variant, about <b>{fmtE(gmExp)}</b> would fall
-          in <b>{setName}</b> by chance.
+          Matchmaker Exchange nodes held <b>{MME_CASES.toLocaleString()}</b> cases in {MME.date}.
+          Treating each case as one random individual, about <b>{fmtE(gmExp)}</b> would carry a
+          chance {gmLabel} <i>de novo</i> variant in <b>{setName}</b>.
         </p>
         <div className="gm-row">
           <Field label="Matches you found">
             <input type="number" min={0} step={1} value={matchesText} onChange={e => onMatches(e.target.value)} />
           </Field>
           <div className="tile key">
-            <span>P(≥ {matches} chance submissions)</span><b>{fmtP(ppoisUpper(matches, gmExp))}</b>
+            <span>P(≥ {matches} chance matches)</span><b>{fmtP(ppoisUpper(matches, gmExp))}</b>
           </div>
         </div>
         <div className="scroll"><table>
-          <thead><tr><th>Chance submissions</th>{[1, 2, 3, 5, 10].map(j => <th key={j}>≥ {j}</th>)}</tr></thead>
+          <thead><tr><th>Chance matches</th>{[1, 2, 3, 5, 10].map(j => <th key={j}>≥ {j}</th>)}</tr></thead>
           <tbody><tr><td>Probability</td>{[1, 2, 3, 5, 10].map(j => <td key={j}>{fmtP(ppoisUpper(j, gmExp))}</td>)}</tr></tbody>
         </table></div>
         <p className="hint">
-          Matches are gene-level, so this uses missense + LoF whatever the variant type above, as a share of the
-          exome-wide rate. Submissions are not random: they include inherited and recessive candidates and favour
-          known disease genes, so treat this as a rough guide. A match is only evidence if the phenotype fits better
-          than a random proband's would. Source: <a href={GENEMATCHER.url} target="_blank" rel="noreferrer">GeneMatcher
-          statistics</a>, copied {GENEMATCHER.date} (the site blocks automated reads, so it is not fetched live).
+          This treats the network as a cohort of {MME_CASES.toLocaleString()} individuals, using the per-individual chance
+          rate above. Matches are gene-level, so it counts {gmLabel} whatever the variant type above. Submitters choose
+          people who already have a candidate variant, so chance matches can be more common than this, and the
+          probabilities here are a lower bound. Cases include inherited and recessive candidates, favour known disease
+          genes, and some patients are in more than one node, so treat this as a rough guide. A match is only evidence if
+          the phenotype fits better than a random proband's would.
         </p>
+        <details className="mme-nodes">
+          <summary>Cases per node</summary>
+          <table>
+            <thead><tr><th>Node</th><th>Cases in MME</th></tr></thead>
+            <tbody>{MME.nodes.map(n => <tr key={n.name}><td>{n.name}</td><td>{n.cases.toLocaleString()}</td></tr>)}</tbody>
+          </table>
+          <p className="hint">
+            Source: <a href={MME.url} target="_blank" rel="noreferrer">Matchmaker Exchange statistics</a> ("Patients/Cases
+            in MME", last updated {MME.date}), copied by hand. The <a href="https://github.com/ga4gh/mme-apis"
+            target="_blank" rel="noreferrer">MME API</a> matches individual patients between nodes and has no statistics
+            endpoint, so the counts are not fetched live.
+          </p>
+        </details>
       </Panel>
 
       <details className="panel method">

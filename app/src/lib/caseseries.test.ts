@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chanceSubmissions, individualsNeeded, median, percentileBelow } from './caseseries'
+import { chanceMatches, individualsNeeded, median, percentileBelow } from './caseseries'
 import { ppoisUpper } from './poisson'
 
 describe('individualsNeeded', () => {
@@ -15,9 +15,9 @@ describe('individualsNeeded', () => {
   })
 })
 
-describe('chanceSubmissions', () => {
-  it('scales submissions by the share of the exome rate', () => {
-    expect(chanceSubmissions(1, 1000, 118780)).toBeCloseTo(118.78, 8)
+describe('chanceMatches', () => {
+  it('treats each case as one individual', () => {
+    expect(chanceMatches(1 / 33000, 118780)).toBeCloseTo(118780 / 33000, 8)
   })
 })
 

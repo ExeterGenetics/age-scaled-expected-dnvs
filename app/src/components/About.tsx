@@ -17,6 +17,18 @@ const REFS = [
     journal: 'Nature 639, 700–707 (2025).',
     doi: '10.1038/s41586-024-08450-5',
   },
+  {
+    id: 4,
+    text: 'Cheng J, Novati G, Pan J, et al. Accurate proteome-wide missense variant effect prediction with AlphaMissense.',
+    journal: 'Science 381, eadg7492 (2023).',
+    doi: '10.1126/science.adg7492',
+  },
+  {
+    id: 5,
+    text: 'Ioannidis NM, Rothstein JH, Pejaver V, et al. REVEL: an ensemble method for predicting the pathogenicity of rare missense variants.',
+    journal: 'Am J Hum Genet 99, 877–885 (2016).',
+    doi: '10.1016/j.ajhg.2016.08.016',
+  },
 ]
 
 // Scrolls rather than following a #link, which sandboxed previews can block
@@ -103,6 +115,14 @@ export function About() {
         <dt>LoF</dt>
         <dd>
           Stop gained, splice donor and splice acceptor by default. Start lost and stop lost can be added.
+        </dd>
+        <dt>Missense score filter</dt>
+        <dd>
+          Restricts missense variants to sites with an AlphaMissense<Cite n={4} /> or REVEL<Cite n={5} /> score at or
+          above a threshold, in steps of 0.05. Each possible missense SNV takes the highest score listed for that
+          change (scores are given per transcript), and sites with no score are left out, so the expected count
+          falls to the rate of passing sites. Use it with observed counts filtered the same way. It applies on both
+          tabs. LoF and synonymous counts are unchanged. REVEL positions are GRCh38 coordinates from the REVEL v1.3 file.
         </dd>
       </dl>
 

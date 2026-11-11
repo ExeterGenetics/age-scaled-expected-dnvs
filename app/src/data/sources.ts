@@ -2,11 +2,15 @@
 import geneRatesTsv from '../../../gene_rates.tsv?raw'
 import scalingTsv from '../../../data/scaling_factors_pat_only.tsv?raw'
 import geneSetsJson from '../../../gene_sets/gene_sets.json'
+import missenseBinsTsv from '../../../missense_score_bins.tsv?raw'
 import { parseGeneRates, parseScalingFactors } from '../lib/parse'
 import type { GeneSetsFile } from '../lib/genesets'
+import { parseMissenseBins } from '../lib/missense'
 import type { PerBin } from '../lib/model'
 
 export const GENE_RATES = parseGeneRates(geneRatesTsv)
+// missense rate per gene binned by AlphaMissense and REVEL score, from build_missense_scores.py
+export const MISSENSE_BINS = parseMissenseBins(missenseBinsTsv)
 export const K_BY_BACKGROUND = parseScalingFactors(scalingTsv)
 // pre-built gene sets and the alias map, from build_gene_sets.py
 export const GENE_SETS = geneSetsJson as GeneSetsFile

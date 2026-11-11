@@ -19,6 +19,7 @@ interface ObservedTestProps {
   onObserved: (o: Observed) => void
   alternative: Alternative
   onAlternative: (a: Alternative) => void
+  misQualifier: string
 }
 
 const fmtP = (p: number) => (p >= 0.001 ? p.toFixed(3) : p.toExponential(2))
@@ -32,7 +33,7 @@ function invalidReason(text: string, expected: number): string | null {
   return null
 }
 
-export function ObservedTest({ expected, observed, onObserved, alternative, onAlternative }: ObservedTestProps) {
+export function ObservedTest({ expected, observed, onObserved, alternative, onAlternative, misQualifier }: ObservedTestProps) {
   return (
     <details className="observed">
       <summary>Compare with observed counts (Poisson test)</summary>
@@ -43,7 +44,8 @@ export function ObservedTest({ expected, observed, onObserved, alternative, onAl
         </select>
       </div>
       <div className="expected-tiles">
-        {KLASSES.map(({ key, label }) => {
+        {KLASSES.map(({ key, label: base }) => {
+          const label = key === 'mis' && misQualifier ? `${base}, ${misQualifier}` : base
           const text = observed[key]
           const reason = invalidReason(text, expected[key])
           const t = reason ? null : poissonTest(Number(text), expected[key], alternative)

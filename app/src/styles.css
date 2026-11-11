@@ -145,3 +145,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .observed summary { display: inline-block; font-size: 14px; padding: 7px 14px; border: 1px solid var(--accent);
   border-radius: 6px; background: var(--panel); }
 .observed summary:hover { background: var(--expected-bg); }
+
+/* missense score filter */
+.missense-filter { gap: 6px; }
+.missense-filter .thresh { display: flex; align-items: center; gap: 10px; }
+.missense-filter .thresh input { flex: 1; }
+.missense-filter .thresh b { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: right; }
+.gcell.unscored { color: var(--muted, #888); cursor: help; }
+.hint.warn { color: #9a5b00; }

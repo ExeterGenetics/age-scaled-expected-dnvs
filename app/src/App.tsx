@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DEFAULT_N_DECODE, GENE_RATES, GENE_SETS, K_BY_BACKGROUND, RATE_GENE_INDEX } from './data/sources'
+import { DEFAULT_N_DECODE, GENE_RATES, GENE_SETS, K_BY_BACKGROUND, MISSENSE_BINS, RATE_GENE_INDEX } from './data/sources'
+import { applyMissenseFilter, filterLabel, filterShares, filterShortLabel, NO_FILTER, poorlyScoredGenes } from './lib/missense'
+import type { MissenseFilter } from './lib/missense'
 import { parseGeneList, resolveGeneList } from './lib/genesets'
 import { ALL_GENES, CUSTOM, GeneSetPicker } from './components/GeneSetPicker'
 import {
@@ -66,11 +68,13 @@ function resolveCohort(mode: Mode, ages: number[] | null, normal: NormalState): 
   return { counts: countsFromNormal(mean, sd, n), n, description: `normal(mean ${mean}, SD ${sd}), n = ${n}` }
 }
 
-function downloadTsv(rows: GeneExpected[], header: string[]) {
+// unscored: genes flagged by poorlyScoredGenes, written as an extra column when a filter is on
+function downloadTsv(rows: GeneExpected[], header: string[], unscored: Set<string> | null) {
   const lines = [
     ...header.map(h => '# ' + h),
-    'gene\tchrom\texp_synonymous\texp_missense\texp_lof',
-    ...rows.map(r => [r.gene, r.chrom, r.syn.toPrecision(6), r.mis.toPrecision(6), r.lof.toPrecision(6)].join('\t')),
+    'gene\tchrom\texp_synonymous\texp_missense\texp_lof' + (unscored ? '\tmissense_mostly_unscored' : ''),
+    ...rows.map(r => [r.gene, r.chrom, r.syn.toPrecision(6), r.mis.toPrecision(6), r.lof.toPrecision(6),
+      ...(unscored ? [unscored.has(r.gene) ? '1' : '0'] : [])].join('\t')),
   ]
   const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/tab-separated-values' }))
   const a = document.createElement('a')
@@ -94,6 +98,10 @@ export function App() {
   const [observed, setObserved] = useState<Observed>({ syn: '', mis: '', lof: '' })
   const [alternative, setAlternative] = useState<Alternative>('greater')
   const [caseState, setCaseState] = useState<CaseState>(CASE_DEFAULT)
+  const [missense, setMissense] = useState<MissenseFilter>(NO_FILTER)
+  // gene rates with missense restricted to sites passing the score filter (both tabs)
+  const rates = useMemo(() => applyMissenseFilter(GENE_RATES, MISSENSE_BINS, missense), [missense])
+  const misQualifier = filterLabel(missense)
 
   const ageSummary = useMemo(() => (tsv.table ? readAges(tsv.table, tsv.column) : null), [tsv.table, tsv.column])
   const cohort = useMemo(
@@ -119,8 +127,8 @@ export function App() {
   const perIndividualScale = caseError ? null : cohortScale(nDecode, k, nDecode) / nDecodeTotal
   const rows = useMemo(() => {
     if (error || 'error' in cohort) return []
-    return expectedPerGene(GENE_RATES, cohortScale(cohort.counts, k, nDecode), sites, lof)
-  }, [error, cohort, k, nDecode, sites, lof])
+    return expectedPerGene(rates, cohortScale(cohort.counts, k, nDecode), sites, lof)
+  }, [error, cohort, k, nDecode, sites, lof, rates])
   const custom = useMemo(
     () => (geneSetId === CUSTOM ? resolveGeneList(parseGeneList(customText), RATE_GENE_INDEX, GENE_SETS.aliases) : null),
     [geneSetId, customText],
@@ -129,6 +137,15 @@ export function App() {
   const subset = useMemo(
     () => (geneSet ? new Set(geneSet.genes) : custom ? new Set(custom.genes) : null),
     [geneSet, custom],
+  )
+  const missenseShares = useMemo(
+    () => (missense.score === 'none' ? null
+      : filterShares(subset ?? GENE_RATES.map(g => g.gene), MISSENSE_BINS, missense, sites)),
+    [missense, subset, sites],
+  )
+  const unscored = useMemo(
+    () => (missense.score === 'none' ? null : poorlyScoredGenes(MISSENSE_BINS, missense, sites)),
+    [missense, sites],
   )
   const subsetRows = useMemo(() => (subset ? rows.filter(r => subset.has(r.gene)) : rows), [rows, subset])
   const scopeLabel = geneSet ? geneSet.label : custom ? 'custom list' : 'all genes'
@@ -148,8 +165,9 @@ export function App() {
       `individuals per bin (${BINS.map(b => BIN_LABELS[b]).join(', ')}): ${BINS.map(b => +cohort.counts[b].toFixed(3)).join(', ')}`,
       `k background: ${BACKGROUNDS[background]}; deCODE probands per bin: ${BINS.map(b => nDecode[b]).join(', ')}`,
       `sites: ${sites === 'hq' ? 'high quality (high, TFBS)' : 'all'}; LoF = ${lof.join(' + ') || 'none'}`,
+      `missense: ${misQualifier ? `${misQualifier} (sites without a score excluded; missense_mostly_unscored = 1 where under half the gene's missense rate is scored)` : 'all missense sites'}`,
       'expected = summed roulette MR x sum_bin(n_bin x k_bin / N_deCODE_bin)',
-    ])
+    ], unscored)
   }
 
   return (
@@ -185,6 +203,7 @@ export function App() {
           scale={perIndividualScale} cohortError={caseError}
           cohortDescription={`deCODE's paternal age mix (${BINS.map(b => `${BIN_LABELS[b]}: ${nDecode[b].toLocaleString()}`).join(', ')} probands)`}
           sites={sites} lof={lof} onCalculator={() => goTo('calculator')}
+          rates={rates} missense={missense} onMissense={setMissense}
         />
       ) : <div className="grid">
         <div className="stack">
@@ -204,6 +223,7 @@ export function App() {
               background={background} onBackground={setBackground}
               sites={sites} onSites={setSites}
               lof={lof} onLof={setLof}
+              missense={missense} onMissense={setMissense} missenseShares={missenseShares}
               nDecode={nDecode} onNDecode={setNDecode}
             />
           </Panel>
@@ -224,11 +244,12 @@ export function App() {
                 totals={totals} integerCounts={mode === 'tsv'} scope={scope}
                 observed={observed} onObserved={setObserved}
                 alternative={alternative} onAlternative={setAlternative}
+                misQualifier={filterShortLabel(missense)}
               />
             </Panel>
           )}
           <Panel title={subset ? `Per gene · ${scopeLabel}` : 'Per gene'}>
-            <GeneTable rows={subsetRows} onDownload={onDownload} />
+            <GeneTable rows={subsetRows} onDownload={onDownload} misQualifier={filterShortLabel(missense)} unscored={unscored ?? undefined} />
           </Panel>
           <p className="prov">
             {GENE_RATES.length.toLocaleString()} genes. Roulette MR summed per MANE transcript, each site counted once per

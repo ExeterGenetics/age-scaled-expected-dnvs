@@ -16,10 +16,11 @@ interface CohortSummaryProps {
   onObserved: (o: Observed) => void
   alternative: Alternative
   onAlternative: (a: Alternative) => void
+  misQualifier: string  // e.g. 'AM ≥ 0.55', empty for no missense filter
 }
 
 export function CohortSummary({
-  counts, n, perIndividualRate, totals, integerCounts, scope, observed, onObserved, alternative, onAlternative,
+  counts, n, perIndividualRate, totals, integerCounts, scope, observed, onObserved, alternative, onAlternative, misQualifier,
 }: CohortSummaryProps) {
   const max = Math.max(...BINS.map(b => counts[b])) || 1
   return (
@@ -34,12 +35,12 @@ export function CohortSummary({
           </div>
           <div className="expected-tiles">
             <Tile value={totals.syn.toFixed(1)} label="Synonymous" />
-            <Tile value={totals.mis.toFixed(1)} label="Missense" />
+            <Tile value={totals.mis.toFixed(1)} label={misQualifier ? `Missense, ${misQualifier}` : 'Missense'} />
             <Tile value={totals.lof.toFixed(2)} label="LoF" />
           </div>
           <ObservedTest
             expected={totals} observed={observed} onObserved={onObserved}
-            alternative={alternative} onAlternative={onAlternative}
+            alternative={alternative} onAlternative={onAlternative} misQualifier={misQualifier}
           />
         </div>
       </div>

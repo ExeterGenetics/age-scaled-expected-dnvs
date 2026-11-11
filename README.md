@@ -15,6 +15,7 @@ The About tab in the app explains the method, options and caveats.
 |---|---|
 | `app/` | React + Vite app. `npm run build` writes one self-contained `app/dist/index.html` with all data inlined, which also works opened straight from disk. |
 | `gene_rates.tsv` | Roulette rate summed per gene (MANE Select) and consequence, for high-quality and all sites. Built by `build_gene_rates.py`. |
+| `missense_score_bins.tsv` | Missense Roulette rate per gene in 0.05-wide AlphaMissense and REVEL score bins (plus unscored), for the missense score filter. Built by `build_missense_scores.py`. |
 | `gene_sets/gene_sets.json` | Pre-built gene sets and an HGNC alias map. Built by `build_gene_sets.py`. |
 | `data/scaling_factors_pat_only.tsv` | Calibration factor k per paternal age group, for the intergenic, synonymous and all-coding backgrounds. |
 
@@ -35,6 +36,11 @@ Pushing to `main` builds and deploys the site to GitHub Pages (`.github/workflow
 ```sh
 # needs the Roulette MANE-annotated coding VCFs (not included)
 python build_gene_rates.py <roulette_MANEannotated_coding_regions> gene_rates.tsv
+
+# needs AlphaMissense_hg38.tsv.gz (zenodo.org/records/8208688) and REVEL v1.3
+# (revel_with_transcript_ids, from sites.google.com/site/revelgenomics)
+python build_missense_scores.py <roulette_MANEannotated_coding_regions> \
+    AlphaMissense_hg38.tsv.gz revel_with_transcript_ids missense_score_bins.tsv
 
 # needs gene_sets/raw/: hgnc_complete_set.txt, mim2gene_medgen,
 # gnomad.v4.1.constraint_metrics.tsv (PanelApp is fetched and cached), plus a G2P DD csv
