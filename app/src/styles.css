@@ -189,3 +189,4 @@ tr.sig-row td { background: var(--expected-bg); font-weight: 600; }
 .versions { width: 100%; margin: 4px 0 8px; }
 .versions th, .versions td { text-align: left; white-space: normal; vertical-align: top; font-size: 13px; }
 .versions th { width: 34%; }
+.share-link { width: 100%; font-size: 12px; margin-top: 6px; }

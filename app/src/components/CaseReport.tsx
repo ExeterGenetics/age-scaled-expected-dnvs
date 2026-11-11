@@ -16,10 +16,18 @@ interface Props {
   chartAfter?: string                         // report section after which the chart goes
   legend?: LegendItem[]
   notes: string[]                             // interpretation notes at the end of the PDF
+  shareLink?: () => string                    // link that reopens the current inputs
+  shareNote?: string | null
 }
 
-export function ReportExport({ rows, fileStem, title, titleGene, chartRef, chartAfter, legend, notes }: Props) {
+export function ReportExport({ rows, fileStem, title, titleGene, chartRef, chartAfter, legend, notes, shareLink, shareNote }: Props) {
   const [busy, setBusy] = useState(false)
+  const [shared, setShared] = useState<{ link: string; copied: boolean } | null>(null)
+  const copyLink = async () => {
+    if (!shareLink) return
+    const link = shareLink()
+    try { await navigator.clipboard.writeText(link); setShared({ link, copied: true }) } catch { setShared({ link, copied: false }) }
+  }
   const [error, setError] = useState<string | null>(null)
   // the generation time and file date are taken when the user exports, not when the page drew
   const stamp = () => {
@@ -51,7 +59,11 @@ export function ReportExport({ rows, fileStem, title, titleGene, chartRef, chart
         <button type="button" className="btn" onClick={pdf} disabled={busy}>{busy ? 'Making PDF…' : 'PDF report'}</button>
         <button type="button" className="btn secondary" onClick={() => download('tsv')}>TSV</button>
         <button type="button" className="btn secondary" onClick={() => download('csv')}>CSV</button>
+        {shareLink && <button type="button" className="btn secondary" onClick={copyLink}>Copy link</button>}
       </div>
+      {shared && (shared.copied
+        ? <p className="hint">Link copied. It holds the inputs in the address only, so nothing is uploaded.{shareNote ? ` ${shareNote}` : ''}</p>
+        : <input className="share-link" readOnly value={shared.link} onFocus={e => e.target.select()} aria-label="Link to this setup" />)}
       <p className="hint">All inputs and results, with the tool version and date.</p>
       {error && <p className="err" role="alert">{error}</p>}
     </Panel>

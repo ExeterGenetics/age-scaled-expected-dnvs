@@ -150,7 +150,8 @@ export function About() {
       <p>
         How likely a case series of k patients with <i>de novo</i> variants in the same gene(s) is by chance, given the
         number of individuals sequenced that the cases could have come from (a guess; the chart shows how much it
-        matters).
+        matters). It addresses chance recurrence only: it is not variant classification (such as ACMG PS2/PM6) or
+        gene–disease validity scoring, and it does not use phenotypes.
       </p>
       <dl>
         <dt>Chance rate</dt>

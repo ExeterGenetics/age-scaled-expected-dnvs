@@ -96,6 +96,7 @@ export function DenovoTest({ value, onChange, model: m, resolve, geneSets, resol
             One row per <i>de novo</i> (gene, consequence; optional count and score columns) or counts per gene.{' '}
             <button type="button" className="linklike" onClick={onAbout}>Formats</button>
           </p>
+          {parsed && <ParseStatus parsed={parsed} />}
         </Panel>
         <Panel title="Paternal ages">
           <Segmented<Mode>
@@ -138,6 +139,18 @@ export function DenovoTest({ value, onChange, model: m, resolve, geneSets, resol
         )}
       </div>
     </div>
+  )
+}
+
+// one line under the input so skipped variants are not missed; amber when over 10% are skipped
+function ParseStatus({ parsed }: { parsed: ParsedDnvs }) {
+  const skipped = Object.values(parsed.skipped).reduce((a, b) => a + b, 0)
+  const share = skipped / Math.max(1, parsed.counted + skipped)
+  return (
+    <p className={share > 0.1 ? 'hint warn parse-status' : 'hint parse-status'}>
+      <b>{parsed.counted.toLocaleString()}</b> counted · <b>{skipped.toLocaleString()}</b> skipped
+      {skipped > 0 && ' (reasons in the input summary below)'}
+    </p>
   )
 }
 

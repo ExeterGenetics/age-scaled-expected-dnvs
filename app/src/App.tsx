@@ -11,6 +11,7 @@ import type { TsvState } from './components/AgeInputs'
 import type { CaseAgeMode } from './components/CaseSeries'
 import { useCohortModel } from './useCohortModel'
 import { downloadText } from './lib/report'
+import { caseLinkQuery, decodeCaseLink, encodeCaseLink } from './lib/share'
 import type { Mode } from './useCohortModel'
 import { CohortSummary } from './components/CohortSummary'
 import type { Observed } from './components/ObservedTest'
@@ -39,7 +40,7 @@ const resolveList = (text: string) => resolveGeneList(parseGeneList(text), RATE_
 // is still written when allowed, so #about and #case-series links open those pages.
 function pageFromHash(): Page {
   try {
-    const h = window.location.hash
+    const h = window.location.hash.split('?')[0]  // a shared link adds ?inputs after the page
     return (Object.keys(HASHES) as Page[]).find(p => HASHES[p] === h) ?? 'calculator'
   } catch { return 'calculator' }
 }
@@ -74,7 +75,11 @@ function downloadTsv(rows: GeneExpected[], header: string[], unscored: Set<strin
 export function App() {
   const [page, goTo] = usePage()
   // Calculator cohort and model, also used by the Case series tab; the de novo tab has its own
-  const calc = useCohortModel()
+  // inputs from a shared Case series link, read once
+  const [link] = useState(() => {
+    try { const q = caseLinkQuery(window.location.hash); return q ? decodeCaseLink(q) : {} } catch { return {} }
+  })
+  const calc = useCohortModel(true, link)
   const dnv = useCohortModel(page === 'test')
   const {
     mode, setMode, tsv, setTsv, normal, setNormal, background, setBackground, sites, setSites,
@@ -84,7 +89,10 @@ export function App() {
   const [customText, setCustomText] = useState('')
   const [observed, setObserved] = useState<Observed>({ syn: '', mis: '', lof: '' })
   const [alternative, setAlternative] = useState<Alternative>('greater')
-  const [caseState, setCaseState] = useState<CaseState>(CASE_DEFAULT)
+  const [caseState, setCaseState] = useState<CaseState>(() => ({
+    ...CASE_DEFAULT,
+    ...Object.fromEntries((['genesText', 'cons', 'k', 'log10N', 'matches'] as const).filter(f => link[f] !== undefined).map(f => [f, link[f]])),
+  }))
   const [denovo, setDenovo] = useState<DenovoState>(DENOVO_DEFAULT)
   const misQualifier = filterLabel(missense)
 
@@ -96,8 +104,10 @@ export function App() {
   // own paternal-age mix (a population-typical reference, independent of the user's cohort),
   // i.e. sum_b k_b / sum_b N_deCODE_b
   // Case series: per-individual rate for a paternal age distribution, deCODE's own mix by default
-  const [caseAgeMode, setCaseAgeMode] = useState<CaseAgeMode>('decode')
-  const [caseNormal, setCaseNormal] = useState<{ mean: string; sd: string }>({ mean: '33', sd: '5.5' })
+  const [caseAgeMode, setCaseAgeMode] = useState<CaseAgeMode>(link.ages?.mode ?? 'decode')
+  const [caseNormal, setCaseNormal] = useState<{ mean: string; sd: string }>(
+    link.ages?.mode === 'normal' ? { mean: link.ages.mean, sd: link.ages.sd } : { mean: '33', sd: '5.5' },
+  )
   const [caseTsv, setCaseTsv] = useState<TsvState>({ table: null, column: 0, text: '', fileName: null })
   const caseAgeSummary = useMemo(() => (caseTsv.table ? readAges(caseTsv.table, caseTsv.column) : null), [caseTsv.table, caseTsv.column])
   const caseAges = useMemo((): { share: PerBin; description: string } | { error: string } => {
@@ -206,6 +216,11 @@ export function App() {
           value={caseState} onChange={setCaseState}
           scale={perIndividualScale} cohortError={caseError}
           cohortDescription={'error' in caseAges ? '' : caseAges.description}
+          shareLink={() => `${window.location.href.split('#')[0]}#case-series?${encodeCaseLink({
+            ...caseState, missense, lof, sites, background,
+            ages: caseAgeMode === 'normal' ? { mode: 'normal', ...caseNormal } : { mode: 'decode' },
+          })}`}
+          shareNote={caseAgeMode === 'tsv' ? "Ages from a TSV are not in the link; it opens with deCODE's age mix." : null}
           modelSummary={`${BACKGROUNDS[background].replace(/ \(.*\)/, '').toLowerCase()} background, ${sites === 'hq' ? 'high-quality sites' : 'all sites'}, LoF = ${lof.map(c => c.replace('_', ' ')).join(', ') || 'none'}`}
           modelDescription={`${BACKGROUNDS[background]} calibration background; deCODE probands per bin ${BINS.map(b => `${BIN_LABELS[b]} ${nDecode[b]}`).join(', ')}`}
           ages={{

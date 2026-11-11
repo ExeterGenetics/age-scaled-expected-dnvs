@@ -26,15 +26,19 @@ export function resolveCohort(mode: Mode, ages: number[] | null, normal: NormalS
 }
 
 // active: compute the per-gene expectations only while a tab using them is open
-export function useCohortModel(active = true) {
+// initial: starting settings, e.g. from a shared link
+export function useCohortModel(
+  active = true,
+  initial: Partial<{ missense: MissenseFilter; lof: Consequence[]; sites: Sites; background: Background }> = {},
+) {
   const [mode, setMode] = useState<Mode>('normal')
   const [tsv, setTsv] = useState<TsvState>({ table: null, column: 0, text: '', fileName: null })
   const [normal, setNormal] = useState<NormalState>({ mean: '33', sd: '5.5', n: '1000' })
-  const [background, setBackground] = useState<Background>('k_intergenic')
-  const [sites, setSites] = useState<Sites>('hq')
-  const [lof, setLof] = useState<Consequence[]>(LOF_DEFAULT)
+  const [background, setBackground] = useState<Background>(initial.background ?? 'k_intergenic')
+  const [sites, setSites] = useState<Sites>(initial.sites ?? 'hq')
+  const [lof, setLof] = useState<Consequence[]>(initial.lof ?? LOF_DEFAULT)
   const [nDecode, setNDecode] = useState<PerBin>(DEFAULT_N_DECODE)
-  const [missense, setMissense] = useState<MissenseFilter>(NO_FILTER)
+  const [missense, setMissense] = useState<MissenseFilter>(initial.missense ?? NO_FILTER)
 
   // gene rates with missense restricted to sites passing the score filter
   const rates: GeneRates[] = useMemo(

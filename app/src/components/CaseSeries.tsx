@@ -70,6 +70,8 @@ interface Props {
   ages: AgeProps                // paternal age distribution of the individuals sequenced
   modelDescription: string      // calibration background and deCODE proband counts, for the report
   modelSummary: string          // one-line summary of the shared model settings, shown on the tab
+  shareLink: () => string       // link that reopens this tab with the current inputs
+  shareNote: string | null      // what the link leaves out, if anything
   sites: Sites
   lof: Consequence[]
   onCalculator: () => void
@@ -79,7 +81,7 @@ interface Props {
 }
 
 export function CaseSeries({
-  value, onChange, scale, cohortError, cohortDescription, ages, modelDescription, modelSummary, sites, lof, onCalculator, rates, missense,
+  value, onChange, scale, cohortError, cohortDescription, ages, modelDescription, modelSummary, shareLink, shareNote, sites, lof, onCalculator, rates, missense,
   onMissense,
 }: Props) {
   const set = (patch: Partial<CaseState>) => onChange({ ...value, ...patch })
@@ -201,7 +203,8 @@ export function CaseSeries({
           <Panel title="Summary"><p className="hint">Enter at least one gene.</p></Panel>
         ) : (
           <Results {...{ genes, scale, k, N, matches, baseline, setName, setNode, label }} gmLabel={q ? `missense (${q}) or LoF` : 'missense or LoF'}
-            onMatches={m => set({ matches: m })} matchesText={value.matches} inputs={inputs} />
+            onMatches={m => set({ matches: m })} matchesText={value.matches} inputs={inputs}
+            shareLink={shareLink} shareNote={shareNote} />
         )}
       </div>
     </div>
@@ -222,9 +225,11 @@ interface ResultsProps {
   label: string
   gmLabel: string
   inputs: ReportRow[]
+  shareLink: () => string
+  shareNote: string | null
 }
 
-function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline, setName, setNode, label, gmLabel, inputs }: ResultsProps) {
+function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline, setName, setNode, label, gmLabel, inputs, shareLink, shareNote }: ResultsProps) {
   const chartRef = useRef<HTMLDivElement>(null)
   const mu = genes.reduce((s, g) => s + g.raw, 0) * scale
   const base = genes.length * median(baseline) * scale
@@ -341,6 +346,7 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
         </table></div>
         <p className="hint">
           Each case counted as one random individual; a rough lower bound, as cases are chosen for candidate variants.
+          Phenotypes are not taken into account.
         </p>
         <details className="mme-nodes">
           <summary>Cases per node</summary>
@@ -355,6 +361,7 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
       </Panel>
 
       <ReportExport
+        shareLink={shareLink} shareNote={shareNote}
         rows={rows} title={`Case series by chance: ${setName}`} titleGene={genes.length === 1 ? genes[0].gene : undefined} chartAfter="Result" chartRef={chartRef}
         fileStem={`case_series_${genes.map(g => g.gene).slice(0, 3).join('_')}${genes.length > 3 ? '_etc' : ''}`}
         legend={[
