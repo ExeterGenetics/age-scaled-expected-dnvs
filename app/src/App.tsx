@@ -16,18 +16,24 @@ import type { Alternative } from './lib/poisson'
 import { GeneTable } from './components/GeneTable'
 import { ModelOptions } from './components/ModelOptions'
 import { About } from './components/About'
+import { CASE_DEFAULT, CaseSeries } from './components/CaseSeries'
+import type { CaseState } from './components/CaseSeries'
 import { Panel, Segmented } from './components/ui'
 import paradigmLogo from './assets/paradigm-logo.png'
 import uoeLogo from './assets/uoe-logo.png'
 
 type Mode = 'tsv' | 'normal'
-type Page = 'calculator' | 'about'
+type Page = 'calculator' | 'case-series' | 'about'
+const HASHES: Partial<Record<Page, string>> = { about: '#about', 'case-series': '#case-series' }
 
 // Pages switch in React state, not by following #links: email, Teams and SharePoint
 // previews open the file in sandboxed frames where hash navigation can fail. The hash
-// is still written when allowed, so #about links open the About page.
+// is still written when allowed, so #about and #case-series links open those pages.
 function pageFromHash(): Page {
-  try { return window.location.hash === '#about' ? 'about' : 'calculator' } catch { return 'calculator' }
+  try {
+    const h = window.location.hash
+    return (Object.keys(HASHES) as Page[]).find(p => HASHES[p] === h) ?? 'calculator'
+  } catch { return 'calculator' }
 }
 
 function usePage(): [Page, (p: Page) => void] {
@@ -41,7 +47,7 @@ function usePage(): [Page, (p: Page) => void] {
     setPage(p)
     window.scrollTo(0, 0)
     try {
-      history.replaceState(null, '', p === 'about' ? '#about' : location.pathname + location.search)
+      history.replaceState(null, '', HASHES[p] ?? location.pathname + location.search)
     } catch { /* sandboxed: the page still switches */ }
   }
   return [page, go]
@@ -87,6 +93,7 @@ export function App() {
   const [customText, setCustomText] = useState('')
   const [observed, setObserved] = useState<Observed>({ syn: '', mis: '', lof: '' })
   const [alternative, setAlternative] = useState<Alternative>('greater')
+  const [caseState, setCaseState] = useState<CaseState>(CASE_DEFAULT)
 
   const ageSummary = useMemo(() => (tsv.table ? readAges(tsv.table, tsv.column) : null), [tsv.table, tsv.column])
   const cohort = useMemo(
@@ -104,6 +111,8 @@ export function App() {
     () => Object.fromEntries(BINS.map(b => [b, k[b] / nDecode[b]])) as PerBin,
     [k, nDecode],
   )
+  // expected DNVs per child per unit of summed roulette rate, for the case-series tab
+  const perChildScale = error || 'error' in cohort ? null : cohortScale(cohort.counts, k, nDecode) / cohort.n
   const rows = useMemo(() => {
     if (error || 'error' in cohort) return []
     return expectedPerGene(GENE_RATES, cohortScale(cohort.counts, k, nDecode), sites, lof)
@@ -157,13 +166,23 @@ export function App() {
           <button type="button" aria-current={page === 'calculator' ? 'page' : undefined} onClick={() => goTo('calculator')}>
             Calculator
           </button>
+          <button type="button" aria-current={page === 'case-series' ? 'page' : undefined} onClick={() => goTo('case-series')}>
+            Case series
+          </button>
           <button type="button" aria-current={page === 'about' ? 'page' : undefined} onClick={() => goTo('about')}>
             About
           </button>
         </nav>
       </header>
 
-      {page === 'about' ? <About /> : <div className="grid">
+      {page === 'about' ? <About /> : page === 'case-series' ? (
+        <CaseSeries
+          value={caseState} onChange={setCaseState}
+          scale={perChildScale} cohortError={error}
+          cohortDescription={'error' in cohort ? '' : cohort.description}
+          sites={sites} lof={lof} onCalculator={() => goTo('calculator')}
+        />
+      ) : <div className="grid">
         <div className="stack">
           <Panel title="Paternal ages">
             <Segmented<Mode>

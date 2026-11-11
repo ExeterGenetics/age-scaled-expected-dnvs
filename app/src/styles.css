@@ -110,3 +110,35 @@ th { color: var(--muted); font-weight: 600; font-size: 12px; }
   border-radius: 0 6px 6px 0; font-size: 14px; }
 .lead-quote footer { margin-top: 4px; color: var(--muted); font-size: 12px; }
 .grow:not(.ghead) .gcell:first-child { font-style: italic; }
+
+/* Case series tab */
+:root { --base: #a8a69d; }
+.genes-in { height: 64px; }
+.nval { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.presets button { border: 1px solid var(--line); background: var(--field); color: var(--ink); border-radius: 12px;
+  padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.presets button:hover { border-color: var(--accent); }
+.lede { font-size: 15px; margin: 0 0 12px; max-width: 72ch; }
+.lede b { font-variant-numeric: tabular-nums; }
+.tiles3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 620px) { .tiles3 { grid-template-columns: minmax(0, 1fr); } }
+.tile.key { border: 2px solid var(--accent); background: var(--expected-bg); }
+.tile .det { font-size: 12px; margin-top: 4px; color: var(--ink); }
+.chip { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px;
+  background: var(--expected-bg); color: var(--accent); }
+.case-chart { display: block; width: 100%; min-width: 480px; height: auto; }
+.case-chart .ax { font-size: 11px; fill: var(--muted); }
+.case-chart .ax.lg { font-size: 12px; }
+.case-chart .pt { font-size: 12px; font-weight: 600; fill: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.legend i { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid var(--accent); vertical-align: middle; margin-right: 5px; }
+.legend i.b { border-top: 2px dashed var(--base); }
+.legend i.r { border-top: 1.5px dotted var(--muted); }
+.gm-row { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 12px; align-items: end; margin-bottom: 12px; }
+@media (max-width: 480px) { .gm-row { grid-template-columns: minmax(0, 1fr); } }
+.method summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--accent); }
+.method p { font-size: 12px; color: var(--muted); max-width: 80ch; }
+.hint a { color: var(--accent); }
+.stack .panel > .hint + .field { margin-top: 10px; }

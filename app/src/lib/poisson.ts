@@ -63,7 +63,7 @@ export function ppoisUpper(k: number, m: number): number {
 }
 
 // x such that P(a, x) = p, by bisection
-function qgamma(p: number, a: number): number {
+export function qgamma(p: number, a: number): number {
   let lo = 0, hi = Math.max(1, a)
   while (incGamma(a, hi).p < p) hi *= 2
   for (let i = 0; i < 200; i++) {
