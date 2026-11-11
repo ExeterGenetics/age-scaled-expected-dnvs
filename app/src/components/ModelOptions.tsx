@@ -1,6 +1,6 @@
 import { BACKGROUNDS, BIN_LABELS, BINS, LOF_OPTIONS } from '../lib/model'
 import type { Background, Consequence, PerBin, Sites } from '../lib/model'
-import { cutoffAt, MISSENSE_SCORES, SCORE_CUTOFF_SOURCE, SCORE_CUTOFFS, SCORE_DEFAULT_THRESHOLD, SCORE_STEP, thresholdLabel } from '../lib/missense'
+import { cutoffAt, MISSENSE_SCORES, SCORE_CUTOFFS, SCORE_DEFAULT_THRESHOLD } from '../lib/missense'
 import type { MissenseFilter, MissenseScore } from '../lib/missense'
 import { Field } from './ui'
 
@@ -25,18 +25,6 @@ export function ModelOptions(p: ModelOptionsProps) {
 
   return (
     <>
-      <Field label="Calibration background">
-        <select value={p.background} onChange={e => p.onBackground(e.target.value as Background)}>
-          {(Object.keys(BACKGROUNDS) as Background[]).map(b => <option key={b} value={b}>{BACKGROUNDS[b]}</option>)}
-        </select>
-      </Field>
-      <Field label="Sites included per gene">
-        <select value={p.sites} onChange={e => p.onSites(e.target.value as Sites)}>
-          <option value="hq">High-quality sites only</option>
-          <option value="all">All sites, including hard-to-sequence regions</option>
-        </select>
-      </Field>
-      <p className="hint model-help">What these mean: <button type="button" className="linklike" onClick={p.onAbout}>About</button></p>
       <fieldset className="checks">
         <legend>LoF consequences</legend>
         {LOF_OPTIONS.map(c => (
@@ -47,18 +35,35 @@ export function ModelOptions(p: ModelOptionsProps) {
         ))}
       </fieldset>
       <MissenseFilterField value={p.missense} onChange={p.onMissense} shares={p.missenseShares} />
-      <details className="ndecode">
-        <summary>deCODE probands per bin</summary>
-        <p className="hint">Divides each k (a cohort total) into a per-individual rate.</p>
-        <div className="ngrid">
-          {BINS.map(b => (
-            <Field key={b} label={BIN_LABELS[b]}>
-              <input
-                type="number" min="1" step="1" value={p.nDecode[b]}
-                onChange={e => p.onNDecode({ ...p.nDecode, [b]: Number(e.target.value) })}
-              />
-            </Field>
-          ))}
+      <details className="advanced">
+        <summary>Advanced model settings (defaults recommended)</summary>
+        <Field label="Calibration background">
+          <select value={p.background} onChange={e => p.onBackground(e.target.value as Background)}>
+            {(Object.keys(BACKGROUNDS) as Background[]).map(b => <option key={b} value={b}>{BACKGROUNDS[b]}</option>)}
+          </select>
+        </Field>
+        <Field label="Sites included per gene">
+          <select value={p.sites} onChange={e => p.onSites(e.target.value as Sites)}>
+            <option value="hq">High-quality sites only</option>
+            <option value="all">All sites, including hard-to-sequence regions</option>
+          </select>
+        </Field>
+        <p className="hint">
+          If your pipeline calls hard-to-sequence regions, choose All sites: high-quality sites give lower expected
+          counts and so smaller p-values. <button type="button" className="linklike" onClick={p.onAbout}>About</button>
+        </p>
+        <div className="field">
+          <span className="flabel">deCODE probands per age bin (converts each k to a per-individual rate)</span>
+          <div className="ngrid">
+            {BINS.map(b => (
+              <Field key={b} label={BIN_LABELS[b]}>
+                <input
+                  type="number" min="1" step="1" value={p.nDecode[b]}
+                  onChange={e => p.onNDecode({ ...p.nDecode, [b]: Number(e.target.value) })}
+                />
+              </Field>
+            ))}
+          </div>
         </div>
       </details>
     </>
@@ -83,21 +88,13 @@ export function MissenseFilterField({ value, onChange, shares }: MissenseFilterF
         <select value={value.score} onChange={e => onScore(e.target.value as MissenseScore | 'none')}>
           <option value="none">None: all missense variants</option>
           {(Object.keys(MISSENSE_SCORES) as MissenseScore[]).map(s => (
-            <option key={s} value={s}>{MISSENSE_SCORES[s]} score at or above a threshold</option>
+            <option key={s} value={s}>{MISSENSE_SCORES[s]}, published cutoff</option>
           ))}
         </select>
       </label>
       {value.score !== 'none' && (
         <>
-          <div className="thresh">
-            <input
-              type="range" min={0} max={1 - SCORE_STEP} step={SCORE_STEP} value={value.threshold}
-              aria-label={`${MISSENSE_SCORES[value.score]} threshold`}
-              onChange={e => onChange({ ...value, threshold: Number(e.target.value) })}
-            />
-            <b>{thresholdLabel(value.score, value.threshold)}</b>
-          </div>
-          <div className="presets cutoffs" role="group" aria-label="Published cutoffs">
+          <div className="presets cutoffs" role="group" aria-label={`${MISSENSE_SCORES[value.score]} cutoff`}>
             {SCORE_CUTOFFS[value.score].map(c => (
               <button
                 type="button" key={c.t} aria-pressed={cutoffAt(value.score as MissenseScore, value.threshold) === c}
@@ -105,16 +102,13 @@ export function MissenseFilterField({ value, onChange, shares }: MissenseFilterF
               >{c.name} <span>{c.label}</span></button>
             ))}
           </div>
-          <p className="hint">
-            Only missense sites passing this count; sites with no score are left out.
-            {shares && <> Here {pct(shares.passing)} of the missense rate passes ({pct(shares.scored)} has a score).</>}
-            {' '}{SCORE_CUTOFF_SOURCE[value.score]} Use the buttons for these, or the slider for steps of 0.05.
-          </p>
-          {shares && shares.scored < 0.5 && (
-            <p className="hint warn">
-              Most of this missense rate has no {MISSENSE_SCORES[value.score]} score, so the filtered expectation
-              mostly reflects missing scores. Try the other score or no filter.
+          {shares && (
+            <p className="hint">
+              {pct(shares.passing)} of the missense rate passes ({pct(shares.scored)} scored; unscored sites are excluded).
             </p>
+          )}
+          {shares && shares.scored < 0.5 && (
+            <p className="hint warn">Mostly unscored by {MISSENSE_SCORES[value.score]} here: try the other score.</p>
           )}
         </>
       )}

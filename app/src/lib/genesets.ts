@@ -17,6 +17,27 @@ export interface GeneSetsFile {
   built: string
   sets: GeneSet[]
   aliases: Record<string, string>  // upper-case previous/alias symbol -> gene_rates symbol
+  non_autosomal?: Record<string, string>  // upper-case symbol of a protein-coding gene off the autosomes -> X, Y, X/Y or MT
+}
+
+// Unmatched symbols split into genes off the autosomes (not modelled: the rates are
+// autosomal) and symbols not recognised at all.
+export function splitUnmatched(
+  symbols: string[], nonAutosomal: Record<string, string>,
+): { offAutosome: [string, string][]; unknown: string[] } {
+  const offAutosome: [string, string][] = []
+  const unknown: string[] = []
+  for (const s of symbols) {
+    const c = nonAutosomal[s.toUpperCase()]
+    if (c) offAutosome.push([s, c]); else unknown.push(s)
+  }
+  return { offAutosome, unknown }
+}
+
+// "DDX3X (X), SRY (Y)" style list, shortened after max entries
+export function describeOffAutosome(genes: [string, string][], max = 8): string {
+  const shown = genes.slice(0, max).map(([g, c]) => `${g} (${c})`).join(', ')
+  return genes.length > max ? `${shown} +${genes.length - max} more` : shown
 }
 
 export interface ResolvedList {

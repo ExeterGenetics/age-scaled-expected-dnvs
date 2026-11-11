@@ -15,7 +15,8 @@ The About tab in the app explains the method, options and caveats.
 |---|---|
 | `app/` | React + Vite app. `npm run build` writes one self-contained `app/dist/index.html` with all data inlined, which also works opened straight from disk. |
 | `gene_rates.tsv` | Roulette rate summed per gene (MANE Select) and consequence, for high-quality and all sites. Built by `build_gene_rates.py`. |
-| `missense_score_bins.tsv` | Missense Roulette rate per gene in AlphaMissense and REVEL score bins, edged at every 0.05 and at the published cutoffs (AM 0.34, > 0.564; REVEL PP3 0.644, 0.773, 0.932), plus unscored, for the missense score filter. Built by `build_missense_scores.py`. |
+| `data/examples/kaplanis2020_dnvs.tsv` | Example de novos for the "Test your de novos" tab: Kaplanis et al. 2020 (45,221 DNMs, 31,058 individuals, CC BY) as gene, consequence, AlphaMissense, REVEL and count. Built by `build_example_dnvs.py`. |
+| `missense_score_bins.tsv` | Missense Roulette rate per gene in AlphaMissense and REVEL score bins, edged at the published cutoffs (AM 0.34, > 0.564; REVEL PP3 0.644, 0.773, 0.932), plus unscored, for the missense score filter. Built by `build_missense_scores.py`. |
 | `gene_sets/gene_sets.json` | Pre-built gene sets and an HGNC alias map. Built by `build_gene_sets.py`. |
 | `data/scaling_factors_pat_only.tsv` | Calibration factor k per paternal age group, for the intergenic, synonymous and all-coding backgrounds. |
 
@@ -41,6 +42,16 @@ python build_gene_rates.py <roulette_MANEannotated_coding_regions> gene_rates.ts
 # (revel_with_transcript_ids, from sites.google.com/site/revelgenomics)
 python build_missense_scores.py <roulette_MANEannotated_coding_regions> \
     AlphaMissense_hg38.tsv.gz revel_with_transcript_ids missense_score_bins.tsv
+
+# font for the PDF report (DejaVu Sans subset, from matplotlib's mpl-data/fonts/ttf/)
+python app/scripts/build_pdf_font.py DejaVuSans.ttf DejaVuSans-Bold.ttf DejaVuSans-Oblique.ttf DejaVuSans-BoldOblique.ttf
+
+# example for the "Test your de novos" tab: Kaplanis et al. 2020 Supplementary Table 1
+# (Europe PMC PMC7116826 supplementary files) saved as data/examples/raw/, plus the UCSC
+# hg19ToHg38.over.chain.gz for lifting sites to AlphaMissense's GRCh38
+python build_example_dnvs.py data/examples/raw/kaplanis2020_supp_table1.tsv \
+    revel_with_transcript_ids AlphaMissense_hg38.tsv.gz hg19ToHg38.over.chain.gz \
+    data/examples/kaplanis2020_dnvs.tsv
 
 # needs gene_sets/raw/: hgnc_complete_set.txt, mim2gene_medgen,
 # gnomad.v4.1.constraint_metrics.tsv (PanelApp is fetched and cached), plus a G2P DD csv

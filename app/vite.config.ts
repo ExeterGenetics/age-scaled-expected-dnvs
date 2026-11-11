@@ -8,5 +8,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 export default defineConfig({
   base: './',
   plugins: [react(), viteSingleFile()],
+  // build date, printed on exported reports with the commit (VITE_COMMIT, set by the deploy workflow)
+  define: { __BUILD_DATE__: JSON.stringify(new Date().toISOString().slice(0, 10)) },
   server: { fs: { allow: ['..'] } },
 })

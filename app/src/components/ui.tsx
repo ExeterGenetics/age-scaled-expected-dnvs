@@ -1,4 +1,6 @@
-import type { ReactNode } from 'react'
+import { useState } from 'react'
+import type { ChangeEvent, ReactNode } from 'react'
+import { readFileText } from '../lib/gzip'
 
 export function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -44,4 +46,56 @@ export function Tile({ value, label }: { value: string; label: string }) {
       <span>{label}</span>
     </div>
   )
+}
+
+// Gene symbols are always italic: a comma-separated list, shortened after max
+export function Genes({ list, max = Infinity }: { list: string[]; max?: number }) {
+  const shown = list.slice(0, max)
+  return (
+    <>
+      {shown.map((g, i) => <span key={g}>{i > 0 && ', '}<i>{g}</i></span>)}
+      {list.length > max && ` +${list.length - max} more`}
+    </>
+  )
+}
+
+// previous symbol → current symbol pairs
+export function Renames({ pairs, max = Infinity }: { pairs: [string, string][]; max?: number }) {
+  return (
+    <>
+      {pairs.slice(0, max).map(([a, b], i) => <span key={a}>{i > 0 && ', '}<i>{a}</i>→<i>{b}</i></span>)}
+      {pairs.length > max && ', …'}
+    </>
+  )
+}
+
+// genes off the autosomes with their chromosome, e.g. DDX3X (X)
+export function OffAutosome({ genes, max = 8 }: { genes: [string, string][]; max?: number }) {
+  return (
+    <>
+      {genes.slice(0, max).map(([g, c], i) => <span key={g}>{i > 0 && ', '}<i>{g}</i> ({c})</span>)}
+      {genes.length > max && ` +${genes.length - max} more`}
+    </>
+  )
+}
+
+// File input handler shared by the upload boxes: reads plain or gzipped text, reports a
+// failed read instead of failing silently, and resets the input so the same file can be
+// chosen again.
+export function useFileInput(onLoad: (text: string, fileName: string) => void) {
+  const [error, setError] = useState<string | null>(null)
+  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.target
+    const file = input.files?.[0]
+    input.value = ''
+    if (!file) return
+    setError(null)
+    try {
+      onLoad(await readFileText(file), file.name)
+    } catch {
+      // browsers report gzip failures vaguely ("Failed to fetch"), so say what usually causes them
+      setError(`Could not read ${file.name}: it may be damaged or not really gzip. Try the uncompressed file.`)
+    }
+  }
+  return { onFile, error }
 }

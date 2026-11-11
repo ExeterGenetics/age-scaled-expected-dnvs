@@ -1,16 +1,23 @@
-import { useMemo } from 'react'
-import { GENE_SETS, MISSENSE_BINS, RATE_GENE_INDEX } from '../data/sources'
+import { fmtP } from '../lib/format'
+import { useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
+import { DATA_VERSIONS, GENE_SETS, MISSENSE_BINS, NON_AUTOSOMAL, RATE_GENE_INDEX } from '../data/sources'
 import { filterLabel, filterShares } from '../lib/missense'
 import type { MissenseFilter } from '../lib/missense'
 import { MissenseFilterField } from './ModelOptions'
-import { parseGeneList, resolveGeneList } from '../lib/genesets'
+import { describeOffAutosome, parseGeneList, resolveGeneList, splitUnmatched } from '../lib/genesets'
 import {
   CASE_CONSEQUENCE_LABELS, chanceMatches, individualsNeeded, MME, MME_CASES, geneRate, median, percentileBelow,
 } from '../lib/caseseries'
 import type { CaseConsequence } from '../lib/caseseries'
 import type { Consequence, GeneRates, Sites } from '../lib/model'
 import { ppoisUpper } from '../lib/poisson'
-import { Field, Panel, Segmented } from './ui'
+import { Field, Genes, OffAutosome, Panel, Renames, Segmented } from './ui'
+import { TsvAgeInput } from './AgeInputs'
+import { ReportExport } from './CaseReport'
+import { BUILD, num, TOOL_NAME, TOOL_URL } from '../lib/report'
+import type { ReportRow } from '../lib/report'
+import type { TsvState } from './AgeInputs'
 
 export interface CaseState {
   genesText: string
@@ -23,6 +30,8 @@ export interface CaseState {
 export const CASE_DEFAULT: CaseState = { genesText: 'ARID1B', cons: 'mis', k: '10', log10N: 5, matches: '3' }
 
 const DDD = 31_058
+// report fields holding gene symbols, italic in the PDF
+const GENE_FIELDS = new Set(['Genes entered', 'Genes tested', 'Renamed', 'Not modelled (not autosomal)', 'Not found'])
 const PRESETS: [number, string][] = [[1e4, '10k'], [DDD, 'DDD 31k'], [1e5, '100k'], [3e5, '300k'], [1e6, '1M']]
 const BASELINE_SET = 'ddg2p_mono'
 
@@ -34,20 +43,23 @@ export function fmtN(n: number): string {
   return Math.round(n).toLocaleString()
 }
 
-const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹'
-export function fmtP(p: number): string {
-  if (p >= 0.995) return '> 0.99'
-  if (p >= 0.01) return p.toFixed(2)
-  if (p >= 0.001) return p.toFixed(3)
-  if (p < 1e-300) return '< 10⁻³⁰⁰'
-  const e = Math.floor(Math.log10(p))
-  const sup = String(e).replace('-', '⁻').replace(/\d/g, d => SUP[+d])
-  return `${(p / 10 ** e).toFixed(1)} × 10${sup}`
-}
 
-const fmtE = (x: number) => (x >= 10 ? x.toFixed(0) : x >= 0.1 ? x.toFixed(2) : x.toPrecision(2))
+const fmtE = (x: number) => (x >= 10 ? Math.round(x).toLocaleString() : x >= 0.1 ? x.toFixed(2) : x.toPrecision(2))
 const oneIn = (r: number) => `1 in ${fmtN(1 / r)}`
+// probability for export: 4 significant figures, never shown as exactly 1
+const pnum = (p: number) => (p >= 0.99995 ? '> 0.9999' : num(p))
 const times = (r: number) => `${r.toFixed(r < 1 ? 2 : 1)}×`
+
+export type CaseAgeMode = 'decode' | 'normal' | 'tsv'
+interface AgeProps {
+  mode: CaseAgeMode
+  onMode: (m: CaseAgeMode) => void
+  normal: { mean: string; sd: string }
+  onNormal: (v: { mean: string; sd: string }) => void
+  tsv: TsvState
+  onTsv: (v: TsvState) => void
+  summary: { ages: number[]; skipped: number } | null
+}
 
 interface Props {
   value: CaseState
@@ -55,6 +67,9 @@ interface Props {
   scale: number | null          // expected DNVs per individual per unit of summed roulette rate
   cohortError: string | null
   cohortDescription: string
+  ages: AgeProps                // paternal age distribution of the individuals sequenced
+  modelDescription: string      // calibration background and deCODE proband counts, for the report
+  modelSummary: string          // one-line summary of the shared model settings, shown on the tab
   sites: Sites
   lof: Consequence[]
   onCalculator: () => void
@@ -64,7 +79,8 @@ interface Props {
 }
 
 export function CaseSeries({
-  value, onChange, scale, cohortError, cohortDescription, sites, lof, onCalculator, rates, missense, onMissense,
+  value, onChange, scale, cohortError, cohortDescription, ages, modelDescription, modelSummary, sites, lof, onCalculator, rates, missense,
+  onMissense,
 }: Props) {
   const set = (patch: Partial<CaseState>) => onChange({ ...value, ...patch })
   const { cons } = value
@@ -76,6 +92,7 @@ export function CaseSeries({
     () => resolveGeneList(parseGeneList(value.genesText), RATE_GENE_INDEX, GENE_SETS.aliases),
     [value.genesText],
   )
+  const unmatched = useMemo(() => splitUnmatched(resolved.unmatched, NON_AUTOSOMAL), [resolved.unmatched])
   const byGene = useMemo(() => new Map(rates.map(g => [g.gene, g])), [rates])
   const baseline = useMemo(() => {
     const ids = new Set(GENE_SETS.sets.find(s => s.id === BASELINE_SET)?.genes ?? [])
@@ -91,6 +108,30 @@ export function CaseSeries({
   const label = CASE_CONSEQUENCE_LABELS[cons] + (q && usesMissense ? ` (missense ${q})` : '')
   const shares = missense.score === 'none' ? null : filterShares(resolved.genes, MISSENSE_BINS, missense, sites)
   const setName = genes.length === 1 ? genes[0].gene : `these ${genes.length} genes`
+  const setNode = genes.length === 1 ? <i>{genes[0].gene}</i> : setName
+  // which patients to count: the same variants the expectation covers
+  const lofNames = lof.map(c => c.replace('_', ' '))
+  const lofText = lofNames.length > 1 ? `${lofNames.slice(0, -1).join(', ')} or ${lofNames[lofNames.length - 1]}` : lofNames[0] ?? 'no LoF classes'
+  const misText = `missense${q ? ` (${q})` : ''}`
+  const countRule = `Count only patients whose de novo is an SNV: ${cons === 'mis' ? misText : cons === 'lof' ? lofText : `${misText}, or ${lofText}`}. Leave out frameshifts and other indels, which are not modelled.`
+  // every input, for the exported report
+  const inputs: ReportRow[] = [
+    ['Genes entered', parseGeneList(value.genesText).join(', ')],
+    ['Genes tested', resolved.genes.join(', ') || 'none'],
+    ...(resolved.renamed.length ? [['Renamed', resolved.renamed.map(([a, b]) => `${a}→${b}`).join(', ')]] : []),
+    ...(unmatched.offAutosome.length ? [['Not modelled (not autosomal)', describeOffAutosome(unmatched.offAutosome, 50)]] : []),
+    ...(unmatched.unknown.length ? [['Not found', unmatched.unknown.join(', ')]] : []),
+    ['Variant type', CASE_CONSEQUENCE_LABELS[cons]],
+    ['Missense score filter', usesMissense ? (q || 'none') : 'not used'],
+    ['LoF consequences', lof.join(', ').replace(/_/g, ' ')],
+    ['Sites', sites === 'hq' ? 'high-quality sites only' : 'all sites'],
+    ['Model', modelDescription],
+    ['Paternal ages', cohortDescription],
+    ['Patients in the case series (k)', String(k)],
+    ['Patients counted', countRule.replace('Count only patients', 'Patients')],
+    ['Individuals sequenced (N)', Math.round(N).toLocaleString()],
+    ['Matches found in Matchmaker Exchange', String(matches)],
+  ].map(([field, v]) => ({ section: 'Inputs', field, value: v, ...(GENE_FIELDS.has(field) ? { italic: 'value' as const } : {}) }))
 
   return (
     <div className="grid">
@@ -102,9 +143,12 @@ export function CaseSeries({
           </Field>
           <p className="hint">
             {genes.length} {genes.length === 1 ? 'gene' : 'genes'} matched
-            {resolved.renamed.length > 0 && <> ({resolved.renamed.map(([a, b]) => `${a}→${b}`).join(', ')})</>}
-            {resolved.unmatched.length > 0 && <span className="warn">. Not found: {resolved.unmatched.join(', ')}</span>}
-            . Counts are pooled across genes.
+            {resolved.renamed.length > 0 && <> (<Renames pairs={resolved.renamed} />)</>}
+            {unmatched.offAutosome.length > 0 && (
+              <span className="warn">. Not modelled, as rates are autosomal only: <OffAutosome genes={unmatched.offAutosome} /></span>
+            )}
+            {unmatched.unknown.length > 0 && <span className="warn">. Not found: <Genes list={unmatched.unknown} /></span>}
+            ; counts are pooled.
           </p>
           <div className="field"><span className="flabel">Variant type</span>
             <Segmented<CaseConsequence> label="Variant type" value={cons} onChange={c => set({ cons: c })}
@@ -114,6 +158,7 @@ export function CaseSeries({
           <Field label="Patients in the case series">
             <input type="number" min={1} max={1000} step={1} value={value.k} onChange={e => set({ k: e.target.value })} />
           </Field>
+          <p className="hint count-rule">{countRule}</p>
           <div className="field">
             <span className="flabel">Individuals sequenced that the cases could have come from</span>
             <div className="nval">{fmtN(N)} individuals</div>
@@ -124,24 +169,39 @@ export function CaseSeries({
                 <button key={l} type="button" onClick={() => set({ log10N: Math.log10(n) })}>{l}</button>
               ))}
             </div>
-            <p className="hint">A guess is fine. The chart shows how much the answer depends on it.</p>
+            <p className="hint">A guess is fine; the chart shows how much it matters.</p>
           </div>
-          <p className="hint">
-            Rates use {cohortDescription}, not the ages on the Calculator tab, since published cases
-            come from many cohorts. Background, sites, LoF classes and the missense filter are shared with the{' '}
-            <button type="button" className="linklike" onClick={onCalculator}>Calculator</button> tab's model settings.
+          <div className="field">
+            <span className="flabel">Their paternal ages</span>
+            <Segmented<CaseAgeMode> label="Paternal ages" value={ages.mode} onChange={ages.onMode}
+              options={[{ value: 'decode', label: 'deCODE mix' }, { value: 'normal', label: 'Mean & SD' }, { value: 'tsv', label: 'From TSV' }]} />
+          </div>
+          {ages.mode === 'normal' && (
+            <div className="row2">
+              <Field label="Mean age">
+                <input type="number" step="0.1" value={ages.normal.mean} onChange={e => ages.onNormal({ ...ages.normal, mean: e.target.value })} />
+              </Field>
+              <Field label="SD">
+                <input type="number" step="0.1" min="0" value={ages.normal.sd} onChange={e => ages.onNormal({ ...ages.normal, sd: e.target.value })} />
+              </Field>
+            </div>
+          )}
+          {ages.mode === 'tsv' && <TsvAgeInput value={ages.tsv} onChange={ages.onTsv} summary={ages.summary} />}
+          <p className="hint model-summary" title={cohortDescription ? `Rates use ${cohortDescription}.` : undefined}>
+            Model: {modelSummary}. Change on the{' '}
+            <button type="button" className="linklike" onClick={onCalculator}>Expected counts</button> tab.
           </p>
         </Panel>
       </div>
 
       <div className="stack">
         {cohortError || scale === null ? (
-          <Panel title="Summary"><p className="err" role="alert">{cohortError ?? 'Check the model settings on the Calculator tab.'}</p></Panel>
+          <Panel title="Summary"><p className="err" role="alert">{cohortError ?? 'Check the model settings on the Expected counts tab.'}</p></Panel>
         ) : genes.length === 0 ? (
           <Panel title="Summary"><p className="hint">Enter at least one gene.</p></Panel>
         ) : (
-          <Results {...{ genes, scale, k, N, matches, baseline, setName, label }} gmLabel={q ? `missense (${q}) or LoF` : 'missense or LoF'}
-            onMatches={m => set({ matches: m })} matchesText={value.matches} />
+          <Results {...{ genes, scale, k, N, matches, baseline, setName, setNode, label }} gmLabel={q ? `missense (${q}) or LoF` : 'missense or LoF'}
+            onMatches={m => set({ matches: m })} matchesText={value.matches} inputs={inputs} />
         )}
       </div>
     </div>
@@ -158,11 +218,14 @@ interface ResultsProps {
   onMatches: (m: string) => void
   baseline: number[]
   setName: string
+  setNode: ReactNode   // setName with a single gene in italics
   label: string
   gmLabel: string
+  inputs: ReportRow[]
 }
 
-function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline, setName, label, gmLabel }: ResultsProps) {
+function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline, setName, setNode, label, gmLabel, inputs }: ResultsProps) {
+  const chartRef = useRef<HTMLDivElement>(null)
   const mu = genes.reduce((s, g) => s + g.raw, 0) * scale
   const base = genes.length * median(baseline) * scale
   const lam = N * mu
@@ -173,13 +236,38 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
 
   if (!(mu > 0)) return <Panel title="Summary"><p className="hint">These genes have no {label} sites with rates.</p></Panel>
 
+  const pct = genes.length === 1 ? Math.round(100 * percentileBelow(baseline, genes[0].raw)) : null
+  const rows: ReportRow[] = [
+    ...inputs,
+    ...([
+      [`Expected ${label} de novos by chance in N`, num(lam)],
+      ['Chance rate per individual', `${num(mu)} (${oneIn(mu)})`],
+      ['Relative to DDG2P median', `${num(mu / base)}×${pct !== null ? `; ${pct}th percentile` : ''}`],
+      [`P(≥ ${k} by chance) in N`, pnum(p)],
+      [`P(≥ ${k} by chance) in N, ${genes.length === 1 ? 'median DDG2P gene' : `${genes.length} median DDG2P genes`}`, pnum(ppoisUpper(k, N * base))],
+      [`Individuals needed for ≥ ${k} by chance`, `${Math.round(n50).toLocaleString()} (50%), ${Math.round(n95).toLocaleString()} (95%), ${Math.round(k / mu).toLocaleString()} (average)`],
+    ] as [string, string][]).map(([field, value]) => ({ section: 'Result', field, value })),
+    ...([
+      ['Cases in MME', `${MME_CASES.toLocaleString()} (${MME.date})`],
+      [`Expected chance cases with a ${gmLabel} de novo`, num(gmExp)],
+      [`P(≥ ${matches} chance matches)`, pnum(ppoisUpper(matches, gmExp))],
+    ] as [string, string][]).map(([field, value]) => ({ section: 'Matchmaker Exchange', field, value })),
+    ...(genes.length > 1 ? genes.map(g => ({
+      section: 'Per gene', field: g.gene, italic: 'field' as const,
+      value: g.raw > 0 ? `${num(g.raw * scale)} per individual; ${Math.round(100 * g.raw * scale / mu)}% of the set` : 'no sites',
+    })) : []),
+    ...DATA_VERSIONS.map(([field, value]) => ({ section: 'Data versions', field, value })),
+    { section: 'Data versions', field: 'Matchmaker Exchange counts', value: `${MME.date} statistics page` },
+    { section: 'Tool', field: 'Name', value: TOOL_NAME },
+    { section: 'Tool', field: 'URL', value: TOOL_URL },
+    { section: 'Tool', field: 'Build', value: `${BUILD.date} (${BUILD.commit})` },
+  ]
+
   return (
     <>
       <Panel title="Summary">
         <p className="lede">
-          If <b>{fmtN(N)}</b> individuals were sequenced, you would expect <b>{fmtE(lam)}</b> {label} <i>de novo</i> variants
-          in <b>{setName}</b> by chance. Seeing <b>{k}</b> or more by chance has probability <b>{fmtP(p)}</b>. For
-          chance alone to explain {k} cases, about <b>{fmtN(n50)}</b> individuals would need to have been sequenced.
+          In <b>{fmtN(N)}</b> individuals, <b>{fmtE(lam)}</b> {label} <i>de novos</i> in <b>{setNode}</b> are expected by chance.
         </p>
         <div className="tiles3">
           <div className="tile">
@@ -195,15 +283,21 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
           </div>
           <div className="tile key">
             <span>P(≥ {k} by chance) in {fmtN(N)}</span><b>{fmtP(p)}</b>
-            <div className="det">{baseLabel}: {fmtP(ppoisUpper(k, N * base))}</div>
+            <span className={`verdict ${p < 0.01 ? 'unlikely' : p < 0.05 ? 'borderline' : 'plausible'}`}>
+              {p < 0.01 ? 'Unlikely by chance' : p < 0.05 ? 'Borderline' : 'Plausible by chance'} at {fmtN(N)}
+            </span>
+            <div className="det">
+              {genes.length === 1 ? 'A typical DDG2P gene' : `${genes.length} typical DDG2P genes`}: {fmtP(ppoisUpper(k, N * base))}
+            </div>
+            <div className="det muted">If you checked several genes, correct for multiple testing.</div>
           </div>
         </div>
       </Panel>
 
       <Panel title="Chance of the case series against individuals sequenced">
-        <CaseChart k={k} N={N} mu={mu} base={base} />
+        <div ref={chartRef}><CaseChart k={k} N={N} mu={mu} base={base} /></div>
         <div className="legend">
-          <span><i />{setName}, {label}</span>
+          <span><i />{setNode}, {label}</span>
           <span><i className="b" />{baseLabel}, same variant type</span>
           <span><i className="r" />DDD (31,058 trios)</span>
         </div>
@@ -230,9 +324,8 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
 
       <Panel title="Matchmaker Exchange matches by chance">
         <p className="lede">
-          Matchmaker Exchange nodes held <b>{MME_CASES.toLocaleString()}</b> cases in {MME.date}.
-          Treating each case as one random individual, about <b>{fmtE(gmExp)}</b> would carry a
-          chance {gmLabel} <i>de novo</i> variant in <b>{setName}</b>.
+          Of <b>{MME_CASES.toLocaleString()}</b> cases ({MME.date}), about <b>{fmtE(gmExp)}</b> would carry a chance {gmLabel}{' '}
+          <i>de novo</i> in <b>{setNode}</b>.
         </p>
         <div className="gm-row">
           <Field label="Matches you found">
@@ -247,12 +340,7 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
           <tbody><tr><td>Probability</td>{[1, 2, 3, 5, 10].map(j => <td key={j}>{fmtP(ppoisUpper(j, gmExp))}</td>)}</tr></tbody>
         </table></div>
         <p className="hint">
-          This treats the network as a cohort of {MME_CASES.toLocaleString()} individuals, using the per-individual chance
-          rate above. Matches are gene-level, so it counts {gmLabel} whatever the variant type above. Submitters choose
-          people who already have a candidate variant, so chance matches can be more common than this, and the
-          probabilities here are a lower bound. Cases include inherited and recessive candidates, favour known disease
-          genes, and some patients are in more than one node, so treat this as a rough guide. A match is only evidence if
-          the phenotype fits better than a random proband's would.
+          Each case counted as one random individual; a rough lower bound, as cases are chosen for candidate variants.
         </p>
         <details className="mme-nodes">
           <summary>Cases per node</summary>
@@ -261,31 +349,29 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
             <tbody>{MME.nodes.map(n => <tr key={n.name}><td>{n.name}</td><td>{n.cases.toLocaleString()}</td></tr>)}</tbody>
           </table>
           <p className="hint">
-            Source: <a href={MME.url} target="_blank" rel="noreferrer">Matchmaker Exchange statistics</a> ("Patients/Cases
-            in MME", last updated {MME.date}), copied by hand. The <a href="https://github.com/ga4gh/mme-apis"
-            target="_blank" rel="noreferrer">MME API</a> matches individual patients between nodes and has no statistics
-            endpoint, so the counts are not fetched live.
+            Source: <a href={MME.url} target="_blank" rel="noreferrer">Matchmaker Exchange statistics</a>, {MME.date}.
           </p>
         </details>
       </Panel>
 
-      <details className="panel method">
-        <summary>How these numbers are calculated</summary>
-        <p>
-          μ is the expected number of <i>de novo</i> variants of the chosen type per individual, summed over the genes: each
-          gene's summed Roulette rate times the deCODE calibration averaged over deCODE's own paternal age mix
-          (Σ k<sub>bin</sub> / Σ probands<sub>bin</sub>). In N individuals the chance count is Poisson(Nμ).
-        </p>
-        <p>
-          P(≥ k by chance) is the Poisson upper tail. The individuals needed for probability q of reaching k is
-          N<sub>q</sub> = qgamma(q, shape = k) / μ, because P(Poisson(λ) ≥ k) = P(Gamma(k, 1) ≤ λ).
-        </p>
-        <p>
-          The DDG2P baseline is the median rate among DDG2P monoallelic genes, times the number of genes entered. This
-          treats the case series as unselected. Real series are ascertained on phenotype, which makes chance less likely
-          when the phenotype is distinctive.
-        </p>
-      </details>
+      <ReportExport
+        rows={rows} title={`Case series by chance: ${setName}`} titleGene={genes.length === 1 ? genes[0].gene : undefined} chartAfter="Result" chartRef={chartRef}
+        fileStem={`case_series_${genes.map(g => g.gene).slice(0, 3).join('_')}${genes.length > 3 ? '_etc' : ''}`}
+        legend={[
+          genes.length === 1
+            ? { italicLead: genes[0].gene, label: `, ${label}`, dash: 'solid', color: [47, 93, 138] }
+            : { label: `${setName}, ${label}`, dash: 'solid', color: [47, 93, 138] },
+          { label: `${baseLabel}, same variant type`, dash: 'dashed', color: [140, 140, 135] },
+          { label: 'DDD (31,058 trios)', dash: 'dotted', color: [107, 107, 102] },
+        ]}
+        notes={[
+          'Probabilities are per gene set as entered; correct for multiple testing if several genes or sets were considered.',
+          'The number of individuals sequenced is an estimate; the chart shows how the probability depends on it.',
+          'Chance is for unselected individuals; cases ascertained on a distinctive phenotype are less likely to be chance.',
+          'Matchmaker Exchange: each case counted as one random individual; cases are chosen for candidate variants, so this is a lower bound.',
+          'Autosomal SNVs only: indels and genes on X, Y or MT are not modelled.',
+        ]}
+      />
     </>
   )
 }

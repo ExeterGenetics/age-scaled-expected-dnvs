@@ -1,6 +1,7 @@
-import type { ChangeEvent } from 'react'
 import type { GeneSet, ResolvedList } from '../lib/genesets'
-import { Field } from './ui'
+import { splitUnmatched } from '../lib/genesets'
+import { NON_AUTOSOMAL } from '../data/sources'
+import { Field, OffAutosome, useFileInput } from './ui'
 
 export const ALL_GENES = 'all'
 export const CUSTOM = 'custom'
@@ -13,6 +14,8 @@ interface GeneSetPickerProps {
   onCustomText: (text: string) => void
   custom: ResolvedList | null
   nGenes: number
+  label?: string
+  noneLabel?: string  // text for the no-subset option
 }
 
 function Preview({ items, max = 12 }: { items: string[]; max?: number }) {
@@ -41,19 +44,19 @@ function Missing({ unmatched }: { unmatched: Record<string, string[]> }) {
   )
 }
 
-export function GeneSetPicker({ sets, value, onChange, customText, onCustomText, custom, nGenes }: GeneSetPickerProps) {
+export function GeneSetPicker({
+  sets, value, onChange, customText, onCustomText, custom, nGenes, label = 'Subset genes to', noneLabel,
+}: GeneSetPickerProps) {
   const selected = sets.find(s => s.id === value)
+  const { offAutosome: offAuto, unknown } = splitUnmatched(custom?.unmatched ?? [], NON_AUTOSOMAL)
 
-  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) onCustomText(await file.text())
-  }
+  const { onFile, error: fileError } = useFileInput(text => onCustomText(text))
 
   return (
     <>
-      <Field label="Subset genes to">
+      <Field label={label}>
         <select value={value} onChange={e => onChange(e.target.value)}>
-          <option value={ALL_GENES}>All genes ({nGenes.toLocaleString()})</option>
+          <option value={ALL_GENES}>{noneLabel ?? `All genes (${nGenes.toLocaleString()})`}</option>
           {sets.map(s => <option key={s.id} value={s.id}>{s.label} ({s.n_in_rates.toLocaleString()})</option>)}
           <option value={CUSTOM}>Custom gene list…</option>
         </select>
@@ -61,10 +64,13 @@ export function GeneSetPicker({ sets, value, onChange, customText, onCustomText,
 
       {selected && (
         <div className="hint">
-          {selected.description}. Source: {selected.source}. {selected.n_in_rates.toLocaleString()} of{' '}
-          {selected.n_source.toLocaleString()} source genes have rates
-          {selected.n_in_rates < selected.n_source ? '; without rates:' : '.'}
-          <Missing unmatched={selected.unmatched} />
+          {selected.description} ({selected.source}).
+          {selected.n_in_rates < selected.n_source && (
+            <details className="missing-genes">
+              <summary>{(selected.n_source - selected.n_in_rates).toLocaleString()} of {selected.n_source.toLocaleString()} genes without rates</summary>
+              <Missing unmatched={selected.unmatched} />
+            </details>
+          )}
         </div>
       )}
 
@@ -77,16 +83,20 @@ export function GeneSetPicker({ sets, value, onChange, customText, onCustomText,
             />
           </Field>
           <Field label="…or load a file (first column)">
-            <input type="file" accept=".txt,.tsv,.csv,text/*" onChange={onFile} />
+            <input type="file" accept=".txt,.tsv,.csv,.gz,text/*" onChange={onFile} />
           </Field>
+          {fileError && <p className="err" role="alert">{fileError}</p>}
           {custom && (custom.genes.length > 0 || custom.unmatched.length > 0) && (
             <p className="hint">
               {custom.genes.length.toLocaleString()} genes matched
               {custom.renamed.length > 0 && <> ({custom.renamed.length} via previous/alias symbols:{' '}
                 <Preview items={custom.renamed.map(([a, b]) => `${a}→${b}`)} max={6} />)</>}
               {custom.duplicates > 0 && <>, {custom.duplicates} duplicates ignored</>}.
-              {custom.unmatched.length > 0 && (
-                <span className="warn"> {custom.unmatched.length} not found: <Preview items={custom.unmatched} />.</span>
+              {offAuto.length > 0 && (
+                <span className="warn"> {offAuto.length} not modelled (rates are autosomal only): <OffAutosome genes={offAuto} />.</span>
+              )}
+              {unknown.length > 0 && (
+                <span className="warn"> {unknown.length} not found: <Preview items={unknown} />.</span>
               )}
             </p>
           )}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseGeneList, resolveGeneList } from './genesets'
+import { describeOffAutosome, parseGeneList, resolveGeneList, splitUnmatched } from './genesets'
 
 describe('custom gene lists', () => {
   const rates = new Map([['SCN2A', 'SCN2A'], ['KMT2D', 'KMT2D'], ['TTN', 'TTN']])
@@ -16,5 +16,14 @@ describe('custom gene lists', () => {
     expect(r.renamed).toEqual([['MLL2', 'KMT2D']])
     expect(r.duplicates).toBe(1)
     expect(r.unmatched).toEqual(['NOTAGENE'])
+  })
+})
+
+describe('unmatched symbols', () => {
+  it('names genes off the autosomes separately from unknown symbols', () => {
+    const r = splitUnmatched(['DDX3X', 'foo1', 'sry'], { DDX3X: 'X', SRY: 'Y' })
+    expect(r.offAutosome).toEqual([['DDX3X', 'X'], ['sry', 'Y']])
+    expect(r.unknown).toEqual(['foo1'])
+    expect(describeOffAutosome(r.offAutosome, 1)).toBe('DDX3X (X) +1 more')
   })
 })

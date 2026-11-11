@@ -1,4 +1,5 @@
 import { poissonTest } from '../lib/poisson'
+import { fmtP, fmtR } from '../lib/format'
 import type { Alternative } from '../lib/poisson'
 
 export type Klass = 'syn' | 'mis' | 'lof'
@@ -22,8 +23,6 @@ interface ObservedTestProps {
   misQualifier: string
 }
 
-const fmtP = (p: number) => (p >= 0.001 ? p.toFixed(3) : p.toExponential(2))
-const fmtR = (r: number) => (r >= 100 ? r.toFixed(0) : r.toPrecision(3))
 
 function invalidReason(text: string, expected: number): string | null {
   if (text.trim() === '') return 'Enter a count'

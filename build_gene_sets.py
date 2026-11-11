@@ -77,6 +77,11 @@ class Hgnc:
         return self.by_symbol.get(s) or self.by_other.get(s)
 
 
+def file_date(path):
+    """Date a downloaded file was saved, so a cached copy keeps its retrieval date."""
+    return datetime.date.fromtimestamp(os.path.getmtime(path)).isoformat()
+
+
 def fetch_panelapp(cache):
     if os.path.exists(cache):
         return json.load(open(cache))
@@ -150,11 +155,12 @@ def main(rates_path, ddg2p_path, out_dir):
         os.path.basename(ddg2p_path), ids, syms)
 
     # PanelApp green, any panel
-    pa = fetch_panelapp(os.path.join(raw, "panelapp_green_genes.json"))
+    pa_cache = os.path.join(raw, "panelapp_green_genes.json")
+    pa = fetch_panelapp(pa_cache)
     ids, syms = unique((r["hgnc_id"], r["symbol"]) for r in pa)
     add("panelapp_green", "PanelApp green (any panel)",
         "Genomics England PanelApp, green genes on any of %d panels" % len({r["panel"] for r in pa}),
-        "PanelApp API, retrieved %s" % today, ids, syms)
+        "PanelApp API, retrieved %s" % file_date(pa_cache), ids, syms)
 
     # OMIM morbid via NCBI mim2gene_medgen
     with open(os.path.join(raw, "mim2gene_medgen"), newline="") as fh:
@@ -165,7 +171,7 @@ def main(rates_path, ddg2p_path, out_dir):
     add("omim_morbid", "OMIM morbid",
         "Genes with a confirmed OMIM phenotype (NCBI mim2gene_medgen, GeneMap, no question/"
         "susceptibility/nondisease qualifier)",
-        "NCBI mim2gene_medgen, retrieved %s" % today, ids, syms)
+        "NCBI mim2gene_medgen, retrieved %s" % file_date(os.path.join(raw, "mim2gene_medgen")), ids, syms)
 
     # gnomAD v4.1 LOEUF
     pairs = []
@@ -190,9 +196,34 @@ def main(rates_path, ddg2p_path, out_dir):
         if h and hgnc.symbol[h].upper() != g.upper():
             aliases.setdefault(hgnc.symbol[h].upper(), g)
 
+    # protein-coding genes off the autosomes (no rates), by current and unambiguous previous or
+    # alias symbol, so the app can say why such a gene is not found
+    def chrom_of(h):
+        loc = hgnc.location.get(h, "")
+        if loc.startswith("X and Y"):
+            return "X/Y"
+        if loc.startswith("X"):
+            return "X"
+        if loc.startswith("Y"):
+            return "Y"
+        if loc.startswith("mito"):
+            return "MT"
+        return None
+    outside = {}
+    for h, s in hgnc.symbol.items():
+        c = chrom_of(h)
+        if c and hgnc.locus_group.get(h) == "protein-coding gene" and h not in hgnc_to_rates:
+            outside[s.upper()] = c
+    for s, h in hgnc.by_other.items():
+        c = chrom_of(h)
+        if (c and hgnc.locus_group.get(h) == "protein-coding gene" and h not in hgnc_to_rates
+                and s not in rates_set and s not in aliases):
+            outside.setdefault(s, c)
+
     out = os.path.join(out_dir, "gene_sets.json")
-    json.dump({"built": today, "sets": sets, "aliases": aliases}, open(out, "w"), separators=(",", ":"))
-    print("aliases: %d\nwrote %s" % (len(aliases), out))
+    json.dump({"built": today, "sets": sets, "aliases": aliases, "non_autosomal": outside},
+              open(out, "w"), separators=(",", ":"))
+    print("aliases: %d\nnon-autosomal symbols: %d\nwrote %s" % (len(aliases), len(outside), out))
 
 
 if __name__ == "__main__":

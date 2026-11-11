@@ -1,6 +1,7 @@
 import { BIN_LABELS, BINS } from '../lib/model'
 import type { PerBin } from '../lib/model'
 import { Tile } from './ui'
+import { sci } from '../lib/format'
 import { ObservedTest } from './ObservedTest'
 import type { Observed } from './ObservedTest'
 import type { Alternative } from '../lib/poisson'
@@ -31,7 +32,7 @@ export function CohortSummary({
           <div className="expected-head">
             {scope
               ? <>Expected <i>de novo</i> SNVs in the gene set <b>{scope.label}</b> · {scope.nGenes.toLocaleString()} genes only</>
-              : <>Expected <i>de novo</i> SNVs across all genes (exome)</>}
+              : <>Expected <i>de novo</i> SNVs across all autosomal genes (exome)</>}
           </div>
           <div className="expected-tiles">
             <Tile value={totals.syn.toFixed(1)} label="Synonymous" />
@@ -59,7 +60,7 @@ export function CohortSummary({
                 <td>{integerCounts ? counts[b] : counts[b].toFixed(1)}</td>
                 <td>{(100 * counts[b] / n).toFixed(1)}%</td>
                 <td className="barcell"><div className="bar" style={{ width: `${100 * counts[b] / max}%` }} /></td>
-                <td>{perIndividualRate[b].toExponential(3)}</td>
+                <td>{sci(perIndividualRate[b], 4)}</td>
               </tr>
             ))}
           </tbody>

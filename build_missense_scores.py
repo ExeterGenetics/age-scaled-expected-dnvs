@@ -4,8 +4,8 @@ Missense sites are taken from the MANE-annotated coding VCFs exactly as in
 build_gene_rates.py (a site counts for a gene when missense is its most severe
 consequence there). Each site gets the maximum score over the score file's rows
 for that chrom/pos/ref/alt (several transcripts can score the same change).
-Scores are binned at EDGES: the 0.05 grid plus the published cutoffs, so every
-edge is an exact threshold. Bin i holds scores in [EDGES[i], EDGES[i+1]), the
+Scores are binned at EDGES: 0 and the published cutoffs, the only thresholds
+the app offers. Bin i holds scores in [EDGES[i], EDGES[i+1]), the
 last bin closed at 1, so the rate with score >= EDGES[i] is the sum of bins
 i..end. Sites with no score go to a separate "unscored" column and never pass
 a threshold. Both scores share the edges, so some bins are unused by one score.
@@ -37,7 +37,7 @@ from build_gene_rates import HQ_FILTERS, RANK
 
 MISSENSE = RANK["missense"]
 CUTOFFS = [0.34, 0.5641, 0.644, 0.773, 0.932]
-EDGES = sorted(set([round(i / 20, 4) for i in range(20)] + CUTOFFS))
+EDGES = [0.0] + CUTOFFS
 KEY = ["chrom", "pos", "ref", "alt"]
 
 

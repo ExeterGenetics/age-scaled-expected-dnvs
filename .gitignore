@@ -4,3 +4,5 @@ gene_sets/raw/
 .ruff_cache/
 __pycache__/
 .DS_Store
+data/examples/raw/
+*.tsbuildinfo

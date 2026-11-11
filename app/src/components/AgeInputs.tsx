@@ -1,7 +1,7 @@
 import type { ChangeEvent } from 'react'
 import { parseTable, pickAgeColumn } from '../lib/parse'
 import type { Table } from '../lib/parse'
-import { Field } from './ui'
+import { Field, useFileInput } from './ui'
 
 export interface TsvState {
   table: Table | null
@@ -16,13 +16,6 @@ export interface NormalState {
   n: string
 }
 
-async function readFileText(file: File): Promise<string> {
-  if (/\.gz$/i.test(file.name)) {
-    const stream = file.stream().pipeThrough(new DecompressionStream('gzip'))
-    return new Response(stream).text()
-  }
-  return file.text()
-}
 
 function fromText(text: string, fileName: string | null): TsvState {
   const table = parseTable(text)
@@ -36,16 +29,14 @@ interface TsvAgeInputProps {
 }
 
 export function TsvAgeInput({ value, onChange, summary }: TsvAgeInputProps) {
-  const onFile = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) onChange(fromText(await readFileText(file), file.name))
-  }
+  const { onFile, error } = useFileInput((text, name) => onChange(fromText(text, name)))
 
   return (
     <>
       <Field label="TSV / CSV file, one row per individual">
         <input type="file" accept=".tsv,.txt,.csv,.gz,text/*" onChange={onFile} />
       </Field>
+      {error && <p className="err" role="alert">{error}</p>}
       <Field label="…or paste ages">
         <textarea
           value={value.text}
@@ -66,7 +57,7 @@ export function TsvAgeInput({ value, onChange, summary }: TsvAgeInputProps) {
             (summary.skipped ? `, ${summary.skipped} skipped` : '') +
             `; mean ${(summary.ages.reduce((a, b) => a + b, 0) / summary.ages.length).toFixed(1)}, ` +
             `range ${Math.min(...summary.ages)}–${Math.max(...summary.ages)}.`
-          : 'A header row is optional. Blank and non-numeric values are skipped.'}
+          : 'Header optional; non-numeric values are skipped.'}
       </p>
     </>
   )
@@ -85,7 +76,6 @@ export function NormalAgeInput({ value, onChange }: { value: NormalState; onChan
       <Field label="Number of individuals">
         <input type="number" step="1" min="1" value={value.n} onChange={set('n')} />
       </Field>
-      <p className="hint">Each bin gets the normal probability mass between its edges; the tails fall into &lt;25 and ≥40.</p>
     </>
   )
 }

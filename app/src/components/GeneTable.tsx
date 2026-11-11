@@ -1,6 +1,7 @@
 import { useDeferredValue, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { GeneExpected } from '../lib/model'
+import { sci } from '../lib/format'
 
 type SortKey = keyof GeneExpected
 const COLUMNS: { key: SortKey; label: string }[] = [
@@ -14,9 +15,9 @@ const ROW_HEIGHT = 32
 
 export function fmt(x: number): string {
   if (x === 0) return '0'
-  if (x >= 100) return x.toFixed(1)
+  if (x >= 100) return x.toLocaleString(undefined, { maximumFractionDigits: 1 })
   if (x >= 0.01) return x.toFixed(3)
-  return x.toExponential(2)
+  return sci(x, 3)
 }
 
 function compare(key: SortKey) {

@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
-import { DEFAULT_N_DECODE, GENE_RATES, GENE_SETS, K_BY_BACKGROUND, MISSENSE_BINS, RATE_GENE_INDEX } from './data/sources'
-import { applyMissenseFilter, filterLabel, filterShares, filterShortLabel, NO_FILTER, poorlyScoredGenes } from './lib/missense'
-import type { MissenseFilter } from './lib/missense'
+import { GENE_RATES, GENE_SETS, MISSENSE_BINS, RATE_GENE_INDEX } from './data/sources'
+import { filterLabel, filterShares, filterShortLabel, poorlyScoredGenes } from './lib/missense'
 import { parseGeneList, resolveGeneList } from './lib/genesets'
 import { ALL_GENES, CUSTOM, GeneSetPicker } from './components/GeneSetPicker'
-import {
-  BACKGROUNDS, BIN_LABELS, BINS, cohortScale, countsFromAges, countsFromNormal, expectedPerGene,
-  LOF_DEFAULT,
-} from './lib/model'
-import type { Background, Consequence, GeneExpected, PerBin, Sites } from './lib/model'
+import { BACKGROUNDS, BIN_LABELS, BINS, cohortScale, countsFromAges, countsFromNormal } from './lib/model'
+import type { GeneExpected, PerBin } from './lib/model'
 import { readAges } from './lib/parse'
 import { NormalAgeInput, TsvAgeInput } from './components/AgeInputs'
-import type { NormalState, TsvState } from './components/AgeInputs'
+import type { TsvState } from './components/AgeInputs'
+import type { CaseAgeMode } from './components/CaseSeries'
+import { useCohortModel } from './useCohortModel'
+import { downloadText } from './lib/report'
+import type { Mode } from './useCohortModel'
 import { CohortSummary } from './components/CohortSummary'
 import type { Observed } from './components/ObservedTest'
 import type { Alternative } from './lib/poisson'
@@ -19,14 +19,20 @@ import { GeneTable } from './components/GeneTable'
 import { ModelOptions } from './components/ModelOptions'
 import { About } from './components/About'
 import { CASE_DEFAULT, CaseSeries } from './components/CaseSeries'
+import { DENOVO_DEFAULT, DenovoTest } from './components/DenovoTest'
+import type { DenovoState } from './components/DenovoTest'
 import type { CaseState } from './components/CaseSeries'
 import { Panel, Segmented } from './components/ui'
 import paradigmLogo from './assets/paradigm-logo.png'
 import uoeLogo from './assets/uoe-logo.png'
 
-type Mode = 'tsv' | 'normal'
-type Page = 'calculator' | 'case-series' | 'about'
-const HASHES: Partial<Record<Page, string>> = { about: '#about', 'case-series': '#case-series' }
+type Page = 'calculator' | 'case-series' | 'test' | 'about'
+const HASHES: Partial<Record<Page, string>> = { about: '#about', 'case-series': '#case-series', test: '#test' }
+
+// symbol in a pasted variant list -> gene_rates symbol, directly or via a previous/alias symbol
+const resolveSymbol = (s: string) => RATE_GENE_INDEX.get(s.toUpperCase()) ?? GENE_SETS.aliases[s.toUpperCase()]
+// pasted gene list -> gene_rates symbols, with renames and misses
+const resolveList = (text: string) => resolveGeneList(parseGeneList(text), RATE_GENE_INDEX, GENE_SETS.aliases)
 
 // Pages switch in React state, not by following #links: email, Teams and SharePoint
 // previews open the file in sandboxed frames where hash navigation can fail. The hash
@@ -54,20 +60,6 @@ function usePage(): [Page, (p: Page) => void] {
   }
   return [page, go]
 }
-type Cohort = { counts: PerBin; n: number; description: string } | { error: string }
-
-function resolveCohort(mode: Mode, ages: number[] | null, normal: NormalState): Cohort {
-  if (mode === 'tsv') {
-    if (!ages || ages.length === 0) return { error: 'Load a file or paste paternal ages to begin.' }
-    return { counts: countsFromAges(ages), n: ages.length, description: `${ages.length} paternal ages from TSV` }
-  }
-  const mean = parseFloat(normal.mean), sd = parseFloat(normal.sd), n = parseFloat(normal.n)
-  if (!Number.isFinite(mean)) return { error: 'Enter a mean paternal age.' }
-  if (!(sd > 0)) return { error: 'Enter an SD above zero.' }
-  if (!(n > 0)) return { error: 'Enter the number of individuals.' }
-  return { counts: countsFromNormal(mean, sd, n), n, description: `normal(mean ${mean}, SD ${sd}), n = ${n}` }
-}
-
 // unscored: genes flagged by poorlyScoredGenes, written as an extra column when a filter is on
 function downloadTsv(rows: GeneExpected[], header: string[], unscored: Set<string> | null) {
   const lines = [
@@ -76,44 +68,25 @@ function downloadTsv(rows: GeneExpected[], header: string[], unscored: Set<strin
     ...rows.map(r => [r.gene, r.chrom, r.syn.toPrecision(6), r.mis.toPrecision(6), r.lof.toPrecision(6),
       ...(unscored ? [unscored.has(r.gene) ? '1' : '0'] : [])].join('\t')),
   ]
-  const url = URL.createObjectURL(new Blob([lines.join('\n') + '\n'], { type: 'text/tab-separated-values' }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'expected_dnvs_per_gene.tsv'
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  downloadText(lines.join('\n') + '\n', 'expected_dnvs_per_gene.tsv', 'text/tab-separated-values')
 }
 
 export function App() {
   const [page, goTo] = usePage()
-  const [mode, setMode] = useState<Mode>('normal')
-  const [tsv, setTsv] = useState<TsvState>({ table: null, column: 0, text: '', fileName: null })
-  const [normal, setNormal] = useState<NormalState>({ mean: '33', sd: '5.5', n: '1000' })
-  const [background, setBackground] = useState<Background>('k_intergenic')
-  const [sites, setSites] = useState<Sites>('hq')
-  const [lof, setLof] = useState<Consequence[]>(LOF_DEFAULT)
-  const [nDecode, setNDecode] = useState<PerBin>(DEFAULT_N_DECODE)
+  // Calculator cohort and model, also used by the Case series tab; the de novo tab has its own
+  const calc = useCohortModel()
+  const dnv = useCohortModel(page === 'test')
+  const {
+    mode, setMode, tsv, setTsv, normal, setNormal, background, setBackground, sites, setSites,
+    lof, setLof, nDecode, setNDecode, missense, setMissense, rates, ageSummary, cohort, k, error, rows,
+  } = calc
   const [geneSetId, setGeneSetId] = useState<string>(ALL_GENES)
   const [customText, setCustomText] = useState('')
   const [observed, setObserved] = useState<Observed>({ syn: '', mis: '', lof: '' })
   const [alternative, setAlternative] = useState<Alternative>('greater')
   const [caseState, setCaseState] = useState<CaseState>(CASE_DEFAULT)
-  const [missense, setMissense] = useState<MissenseFilter>(NO_FILTER)
-  // gene rates with missense restricted to sites passing the score filter (both tabs)
-  const rates = useMemo(() => applyMissenseFilter(GENE_RATES, MISSENSE_BINS, missense), [missense])
+  const [denovo, setDenovo] = useState<DenovoState>(DENOVO_DEFAULT)
   const misQualifier = filterLabel(missense)
-
-  const ageSummary = useMemo(() => (tsv.table ? readAges(tsv.table, tsv.column) : null), [tsv.table, tsv.column])
-  const cohort = useMemo(
-    () => resolveCohort(mode, ageSummary?.ages ?? null, normal),
-    [mode, ageSummary, normal],
-  )
-
-  const k = K_BY_BACKGROUND[background]
-  const badN = BINS.filter(b => !(nDecode[b] > 0))
-  const error = 'error' in cohort ? cohort.error
-    : badN.length ? `deCODE proband counts must be above zero (${badN.map(b => BIN_LABELS[b]).join(', ')}).`
-    : null
 
   const perIndividualRate = useMemo(
     () => Object.fromEntries(BINS.map(b => [b, k[b] / nDecode[b]])) as PerBin,
@@ -122,13 +95,35 @@ export function App() {
   // Case-series tab: expected DNVs per individual per unit of summed roulette rate for deCODE's
   // own paternal-age mix (a population-typical reference, independent of the user's cohort),
   // i.e. sum_b k_b / sum_b N_deCODE_b
-  const nDecodeTotal = BINS.reduce((s, b) => s + nDecode[b], 0)
-  const caseError = badN.length ? `deCODE proband counts must be above zero (${badN.map(b => BIN_LABELS[b]).join(', ')}).` : null
-  const perIndividualScale = caseError ? null : cohortScale(nDecode, k, nDecode) / nDecodeTotal
-  const rows = useMemo(() => {
-    if (error || 'error' in cohort) return []
-    return expectedPerGene(rates, cohortScale(cohort.counts, k, nDecode), sites, lof)
-  }, [error, cohort, k, nDecode, sites, lof, rates])
+  // Case series: per-individual rate for a paternal age distribution, deCODE's own mix by default
+  const [caseAgeMode, setCaseAgeMode] = useState<CaseAgeMode>('decode')
+  const [caseNormal, setCaseNormal] = useState<{ mean: string; sd: string }>({ mean: '33', sd: '5.5' })
+  const [caseTsv, setCaseTsv] = useState<TsvState>({ table: null, column: 0, text: '', fileName: null })
+  const caseAgeSummary = useMemo(() => (caseTsv.table ? readAges(caseTsv.table, caseTsv.column) : null), [caseTsv.table, caseTsv.column])
+  const caseAges = useMemo((): { share: PerBin; description: string } | { error: string } => {
+    if (caseAgeMode === 'decode') {
+      const total = BINS.reduce((s, b) => s + nDecode[b], 0)
+      return {
+        share: Object.fromEntries(BINS.map(b => [b, nDecode[b] / total])) as PerBin,
+        description: `deCODE's paternal age mix (${BINS.map(b => `${BIN_LABELS[b]}: ${nDecode[b].toLocaleString()}`).join(', ')} probands)`,
+      }
+    }
+    if (caseAgeMode === 'normal') {
+      const mean = parseFloat(caseNormal.mean), sd = parseFloat(caseNormal.sd)
+      if (!Number.isFinite(mean)) return { error: 'Enter a mean paternal age.' }
+      if (!(sd > 0)) return { error: 'Enter an SD above zero.' }
+      return { share: countsFromNormal(mean, sd, 1), description: `paternal ages normal(mean ${mean}, SD ${sd})` }
+    }
+    const ages = caseAgeSummary?.ages ?? []
+    if (ages.length === 0) return { error: 'Load or paste paternal ages.' }
+    const counts = countsFromAges(ages)
+    return {
+      share: Object.fromEntries(BINS.map(b => [b, counts[b] / ages.length])) as PerBin,
+      description: `${ages.length} paternal ages from TSV`,
+    }
+  }, [caseAgeMode, caseNormal, caseAgeSummary, nDecode])
+  const caseError = calc.nDecodeError ?? ('error' in caseAges ? caseAges.error : null)
+  const perIndividualScale = caseError || 'error' in caseAges ? null : cohortScale(caseAges.share, k, nDecode)
   const custom = useMemo(
     () => (geneSetId === CUSTOM ? resolveGeneList(parseGeneList(customText), RATE_GENE_INDEX, GENE_SETS.aliases) : null),
     [geneSetId, customText],
@@ -176,8 +171,8 @@ export function App() {
         <div>
           <h1>Expected <i>de novo</i> SNVs per gene, scaled by paternal age</h1>
           <p className="sub">
-            Roulette mutation rates summed per MANE gene, calibrated to deCODE trios binned by paternal age.
-            Give your cohort's paternal ages to get expected synonymous, missense and LoF <i>de novo</i> variant counts for every gene.
+            Expected synonymous, missense and LoF <i>de novo</i> SNVs per gene for your cohort's paternal ages, from Roulette
+            rates calibrated to deCODE trios. <span className="privacy">Runs in your browser: nothing you enter or load is uploaded.</span>
           </p>
         </div>
         <div className="logos">
@@ -186,10 +181,13 @@ export function App() {
         </div>
         <nav className="tabs" aria-label="Pages">
           <button type="button" aria-current={page === 'calculator' ? 'page' : undefined} onClick={() => goTo('calculator')}>
-            Calculator
+            Expected counts
           </button>
           <button type="button" aria-current={page === 'case-series' ? 'page' : undefined} onClick={() => goTo('case-series')}>
-            Case series
+            Case series by chance
+          </button>
+          <button type="button" aria-current={page === 'test' ? 'page' : undefined} onClick={() => goTo('test')}>
+            Test your de novos
           </button>
           <button type="button" aria-current={page === 'about' ? 'page' : undefined} onClick={() => goTo('about')}>
             About
@@ -197,20 +195,32 @@ export function App() {
         </nav>
       </header>
 
-      {page === 'about' ? <About /> : page === 'case-series' ? (
+      {page === 'about' ? <About /> : page === 'test' ? (
+        <DenovoTest
+          value={denovo} onChange={setDenovo} model={dnv}
+          resolve={resolveSymbol} onAbout={() => goTo('about')}
+          geneSets={GENE_SETS.sets} resolveList={resolveList}
+        />
+      ) : page === 'case-series' ? (
         <CaseSeries
           value={caseState} onChange={setCaseState}
           scale={perIndividualScale} cohortError={caseError}
-          cohortDescription={`deCODE's paternal age mix (${BINS.map(b => `${BIN_LABELS[b]}: ${nDecode[b].toLocaleString()}`).join(', ')} probands)`}
+          cohortDescription={'error' in caseAges ? '' : caseAges.description}
+          modelSummary={`${BACKGROUNDS[background].replace(/ \(.*\)/, '').toLowerCase()} background, ${sites === 'hq' ? 'high-quality sites' : 'all sites'}, LoF = ${lof.map(c => c.replace('_', ' ')).join(', ') || 'none'}`}
+          modelDescription={`${BACKGROUNDS[background]} calibration background; deCODE probands per bin ${BINS.map(b => `${BIN_LABELS[b]} ${nDecode[b]}`).join(', ')}`}
+          ages={{
+            mode: caseAgeMode, onMode: setCaseAgeMode, normal: caseNormal, onNormal: setCaseNormal,
+            tsv: caseTsv, onTsv: setCaseTsv, summary: caseAgeSummary,
+          }}
           sites={sites} lof={lof} onCalculator={() => goTo('calculator')}
           rates={rates} missense={missense} onMissense={setMissense}
         />
-      ) : <div className="grid">
+      ) : <div className="grid results-first">
         <div className="stack">
           <Panel title="Paternal ages">
             <Segmented<Mode>
               label="Age input" value={mode} onChange={setMode}
-              options={[{ value: 'normal', label: 'Mean & SD' }, { value: 'tsv', label: 'Ages from TSV' }]}
+              options={[{ value: 'normal', label: 'Mean & SD' }, { value: 'tsv', label: 'From TSV' }]}
             />
             {mode === 'normal'
               ? <NormalAgeInput value={normal} onChange={setNormal} />
@@ -251,11 +261,6 @@ export function App() {
           <Panel title={subset ? `Per gene · ${scopeLabel}` : 'Per gene'}>
             <GeneTable rows={subsetRows} onDownload={onDownload} misQualifier={filterShortLabel(missense)} unscored={unscored ?? undefined} />
           </Panel>
-          <p className="prov">
-            {GENE_RATES.length.toLocaleString()} genes. Roulette MR summed per MANE transcript, each site counted once per
-            gene under its most severe consequence (gene_rates.tsv). k per paternal-age bin from
-            scaling_factors_pat_only.tsv. Ages binned as &lt;25, 25–29, 30–34, 35–39, ≥40 on exact values.
-          </p>
         </div>
       </div>}
     </main>

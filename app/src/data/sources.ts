@@ -14,6 +14,8 @@ export const MISSENSE_BINS = parseMissenseBins(missenseBinsTsv)
 export const K_BY_BACKGROUND = parseScalingFactors(scalingTsv)
 // pre-built gene sets and the alias map, from build_gene_sets.py
 export const GENE_SETS = geneSetsJson as GeneSetsFile
+// protein-coding genes on X, Y or MT: no rates, named as such when not found
+export const NON_AUTOSOMAL: Record<string, string> = GENE_SETS.non_autosomal ?? {}
 // upper-case symbol -> gene_rates symbol, for matching custom gene lists
 export const RATE_GENE_INDEX = new Map(GENE_RATES.map(g => [g.gene.toUpperCase(), g.gene]))
 
@@ -25,3 +27,14 @@ export const RATE_GENE_INDEX = new Map(GENE_RATES.map(g => [g.gene.toUpperCase()
 export const DEFAULT_N_DECODE: PerBin = {
   lt_25: 1153, '25_29': 1528, '30_34': 1391, '35_39': 808, gt_39: 518,
 }
+
+// Versions of every data source, for About and exported reports. Update with the data.
+export const DATA_VERSIONS: [string, string][] = [
+  ['Mutation rates', 'Roulette (Seplyarskiy et al. 2023), MANE Select coding sites, GRCh38'],
+  ['Calibration', 'deCODE trios by paternal age group (Pálsson et al. 2025)'],
+  ['AlphaMissense', 'Cheng et al. 2023, AlphaMissense_hg38 (zenodo.org/records/8208688)'],
+  ['REVEL', 'v1.3 (Ioannidis et al. 2016)'],
+  ['Gene symbols and chromosomes', 'HGNC complete set, retrieved 2026-10-29'],
+  ...GENE_SETS.sets.map(s => [s.label, s.source] as [string, string]),
+  ['Gene sets built', GENE_SETS.built],
+]

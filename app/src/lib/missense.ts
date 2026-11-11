@@ -13,7 +13,6 @@ export const MISSENSE_SCORES = {
 } as const
 export type MissenseScore = keyof typeof MISSENSE_SCORES
 
-export const SCORE_STEP = 0.05
 
 // Published cutoffs, offered as one-click thresholds. Each must be a bin edge in the TSV.
 // AlphaMissense (Cheng et al. 2023): likely benign < 0.34, likely pathogenic > 0.564; scores
