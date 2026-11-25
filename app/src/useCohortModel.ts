@@ -2,27 +2,44 @@
 // The Calculator and the de novo test tab each hold their own, so the tabs are independent.
 
 import { useMemo, useState } from 'react'
-import { DEFAULT_N_DECODE, GENE_RATES, K_BY_BACKGROUND, MISSENSE_BINS } from './data/sources'
+import { DECODE_BIN_MEAN_AGE, DEFAULT_N_DECODE, GENE_RATES, K_BY_BACKGROUND, MISSENSE_BINS } from './data/sources'
 import { applyMissenseFilter, NO_FILTER } from './lib/missense'
 import type { MissenseFilter } from './lib/missense'
-import { BIN_LABELS, BINS, cohortScale, countsFromAges, countsFromNormal, expectedPerGene, LOF_DEFAULT } from './lib/model'
-import type { Background, Consequence, GeneExpected, GeneRates, PerBin, Sites } from './lib/model'
+import {
+  countsFromAges, expectedPerGene, fitLinearRate, linearCohortScale, LOF_DEFAULT,
+} from './lib/model'
+import type { Background, Consequence, GeneExpected, GeneRates, LinearFit, PerBin, Sites } from './lib/model'
 import { readAges } from './lib/parse'
-import type { NormalState, TsvState } from './components/AgeInputs'
+import type { MeanAgeState, TsvState } from './components/AgeInputs'
 
-export type Mode = 'tsv' | 'normal'
-export type Cohort = { counts: PerBin; n: number; description: string } | { error: string }
+export type Mode = 'tsv' | 'mean'
+export type Cohort = {
+  meanAge: number
+  counts: PerBin | null   // individual bin counts when ages come from TSV; null in mean-age mode
+  n: number
+  description: string
+} | { error: string }
 
-export function resolveCohort(mode: Mode, ages: number[] | null, normal: NormalState): Cohort {
+export function resolveCohort(mode: Mode, ages: number[] | null, meanInput: MeanAgeState): Cohort {
   if (mode === 'tsv') {
     if (!ages || ages.length === 0) return { error: 'Load a file or paste paternal ages to begin.' }
-    return { counts: countsFromAges(ages), n: ages.length, description: `${ages.length} paternal ages from TSV` }
+    const meanAge = ages.reduce((a, b) => a + b, 0) / ages.length
+    return {
+      meanAge,
+      counts: countsFromAges(ages),
+      n: ages.length,
+      description: `${ages.length} paternal ages from TSV (mean ${meanAge.toFixed(2)} yr)`,
+    }
   }
-  const mean = parseFloat(normal.mean), sd = parseFloat(normal.sd), n = parseFloat(normal.n)
-  if (!Number.isFinite(mean)) return { error: 'Enter a mean paternal age.' }
-  if (!(sd > 0)) return { error: 'Enter an SD above zero.' }
+  const mean = parseFloat(meanInput.mean), n = parseFloat(meanInput.n)
+  if (!Number.isFinite(mean) || mean <= 0) return { error: 'Enter a mean paternal age above zero.' }
   if (!(n > 0)) return { error: 'Enter the number of individuals.' }
-  return { counts: countsFromNormal(mean, sd, n), n, description: `normal(mean ${mean}, SD ${sd}), n = ${n}` }
+  return {
+    meanAge: mean,
+    counts: null,
+    n,
+    description: `mean paternal age ${mean} yr, n = ${n}`,
+  }
 }
 
 // active: compute the per-gene expectations only while a tab using them is open
@@ -31,13 +48,12 @@ export function useCohortModel(
   active = true,
   initial: Partial<{ missense: MissenseFilter; lof: Consequence[]; sites: Sites; background: Background }> = {},
 ) {
-  const [mode, setMode] = useState<Mode>('normal')
+  const [mode, setMode] = useState<Mode>('mean')
   const [tsv, setTsv] = useState<TsvState>({ table: null, column: 0, text: '', fileName: null })
-  const [normal, setNormal] = useState<NormalState>({ mean: '33', sd: '5.5', n: '1000' })
+  const [meanInput, setMeanInput] = useState<MeanAgeState>({ mean: '33', n: '1000' })
   const [background, setBackground] = useState<Background>(initial.background ?? 'k_intergenic')
   const [sites, setSites] = useState<Sites>(initial.sites ?? 'hq')
   const [lof, setLof] = useState<Consequence[]>(initial.lof ?? LOF_DEFAULT)
-  const [nDecode, setNDecode] = useState<PerBin>(DEFAULT_N_DECODE)
   const [missense, setMissense] = useState<MissenseFilter>(initial.missense ?? NO_FILTER)
 
   // gene rates with missense restricted to sites passing the score filter
@@ -45,21 +61,24 @@ export function useCohortModel(
     () => (active ? applyMissenseFilter(GENE_RATES, MISSENSE_BINS, missense) : GENE_RATES), [active, missense],
   )
   const ageSummary = useMemo(() => (tsv.table ? readAges(tsv.table, tsv.column) : null), [tsv.table, tsv.column])
-  const cohort = useMemo(() => resolveCohort(mode, ageSummary?.ages ?? null, normal), [mode, ageSummary, normal])
+  const cohort = useMemo(() => resolveCohort(mode, ageSummary?.ages ?? null, meanInput), [mode, ageSummary, meanInput])
   const k = K_BY_BACKGROUND[background]
-  const badN = BINS.filter(b => !(nDecode[b] > 0))
-  const nDecodeError = badN.length ? `deCODE proband counts must be above zero (${badN.map(b => BIN_LABELS[b]).join(', ')}).` : null
-  const error = 'error' in cohort ? cohort.error : nDecodeError
+  const nDecode = DEFAULT_N_DECODE
+  const error = 'error' in cohort ? cohort.error : null
+  const linearFit: LinearFit = useMemo(
+    () => fitLinearRate(k, nDecode, DECODE_BIN_MEAN_AGE),
+    [k, nDecode],
+  )
   // expected counts per gene for the cohort, all genes; empty when the inputs are invalid
   const rows: GeneExpected[] = useMemo(() => {
     if (!active || error || 'error' in cohort) return []
-    return expectedPerGene(rates, cohortScale(cohort.counts, k, nDecode), sites, lof)
-  }, [active, error, cohort, k, nDecode, sites, lof, rates])
+    return expectedPerGene(rates, linearCohortScale(cohort.meanAge, cohort.n, linearFit), sites, lof)
+  }, [active, error, linearFit, cohort, sites, lof, rates])
 
   return {
-    mode, setMode, tsv, setTsv, normal, setNormal, background, setBackground, sites, setSites,
-    lof, setLof, nDecode, setNDecode, missense, setMissense,
-    rates, ageSummary, cohort, k, nDecodeError, error, rows,
+    mode, setMode, tsv, setTsv, meanInput, setMeanInput, background, setBackground, sites, setSites,
+    lof, setLof, nDecode, missense, setMissense,
+    rates, ageSummary, cohort, k, linearFit, error, rows,
   }
 }
 export type CohortModel = ReturnType<typeof useCohortModel>

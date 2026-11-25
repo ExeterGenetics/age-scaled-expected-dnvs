@@ -89,10 +89,13 @@ export function About() {
           This is done separately for each paternal age group.
         </li>
         <li>
-          <b>Your cohort's paternal ages.</b> Ages are grouped as &lt;25, 25–29, 30–34, 35–39 and ≥40. A gene's
-          expected count is its summed rate multiplied, for each age group, by the number of your probands in that
-          group and that group's calibration factor per deCODE proband. With a mean and SD, the numbers per group come
-          from a normal distribution, with the tails counted in the end groups.
+          <b>Continuous linear paternal-age scaling.</b> The per-proband calibrated rates across the five deCODE
+          paternal-age bins (&lt;25, 25–29, 30–34, 35–39 and ≥40 years) are paired with the exact mean paternal age in
+          each bin (22.1, 27.1, 31.9, 36.7 and 44.4 years from Pálsson et al. 2025) and fitted by an
+          N<sub>deCODE</sub>-weighted linear regression, s(a) = α + βa (R² = 0.9987 for the intergenic background).
+          This preserves the exact overall deCODE calibration mean (30.3 years) while avoiding clamping at the
+          &lt;25 and ≥40 bin boundaries. By linearity, a cohort&apos;s expected count for a gene depends only on its size N
+          and mean paternal age a&#x0304;, regardless of variance or skewness: E = (summed Roulette rate) × N × (α + βa&#x0304;).
         </li>
       </ol>
 
@@ -157,9 +160,9 @@ export function About() {
         <dt>Chance rate</dt>
         <dd>
           μ is the expected number of <i>de novo</i> variants of the chosen type per individual, summed over the genes:
-          each gene's summed Roulette rate times the deCODE calibration averaged over a paternal age distribution. By
-          default this is deCODE's own mix (Σ k<sub>bin</sub> / Σ probands<sub>bin</sub>), since published cases come
-          from many cohorts; a mean and SD or a list of ages can be given instead. Background,
+          each gene's summed Roulette rate times the linear paternal-age calibration evaluated at the chosen mean
+          paternal age. By default this is deCODE's own mean paternal age (30.3 years, giving Σ k<sub>bin</sub> / Σ probands<sub>bin</sub>),
+          since published cases come from many cohorts; a custom mean paternal age or a list of ages can be given instead. Background,
           sites, LoF classes and the missense filter are the Expected counts tab's. In N individuals the chance count is
           Poisson(Nμ); P(≥ k by chance) is its upper tail, and the individuals needed for probability q of reaching k
           is N<sub>q</sub> = qgamma(q, shape = k) / μ, because P(Poisson(λ) ≥ k) = P(Gamma(k, 1) ≤ λ).
@@ -276,10 +279,6 @@ export function About() {
         <li>
           <b>A few genes have no rates</b> in the source files and are left out (for example <i>SHANK3</i> and <i>POLR2A</i>); the
           gene set panel lists any that fall in the selected set.
-        </li>
-        <li>
-          The number of deCODE probands per age group (under Model) converts each calibration factor to a rate per
-          proband; it can be edited if better figures are available.
         </li>
       </ul>
 

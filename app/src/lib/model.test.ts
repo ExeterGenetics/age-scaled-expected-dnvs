@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
-  binOf, cohortScale, countsFromAges, countsFromNormal, expectedPerGene, LOF_DEFAULT, normCdf,
+  binOf, cohortScale, countsFromAges, countsFromNormal, expectedPerGene, fitLinearRate, linearCohortScale,
+  LOF_DEFAULT, normCdf, rateAtAge,
 } from './model'
 import type { GeneRates, PerBin } from './model'
 import { parseScalingFactors, parseTable, pickAgeColumn, readAges } from './parse'
+import { DECODE_BIN_MEAN_AGE, DEFAULT_N_DECODE, K_BY_BACKGROUND } from '../data/sources'
 
 const ones: PerBin = { lt_25: 1, '25_29': 1, '30_34': 1, '35_39': 1, gt_39: 1 }
 
@@ -41,6 +43,22 @@ describe('expected counts', () => {
     const [e] = expectedPerGene([gene], 2, 'hq', LOF_DEFAULT)
     expect(e).toEqual({ gene: 'G', chrom: '1', syn: 100, mis: 200, lof: 12 })
     expect(expectedPerGene([gene], 2, 'all', ['stop_gained'])[0].mis).toBe(220)
+  })
+
+  it('fits weighted linear paternal-age scaling accurately and preserves the overall deCODE mean', () => {
+    const k = K_BY_BACKGROUND.k_intergenic
+    const fit = fitLinearRate(k, DEFAULT_N_DECODE, DECODE_BIN_MEAN_AGE)
+    expect(fit.r2).toBeGreaterThan(0.998)
+    expect(fit.meanAge).toBeCloseTo(30.34, 1)
+    // passes identically through the overall deCODE average rate (sum k_b / sum N_b)
+    const overallObserved = Object.values(k).reduce((a, b) => a + b, 0) /
+      Object.values(DEFAULT_N_DECODE).reduce((a, b) => a + b, 0)
+    expect(rateAtAge(fit.meanAge, fit)).toBeCloseTo(overallObserved, 12)
+    // linear expectation over individual ages equals N * rateAtAge(mean)
+    const ages = [22, 28, 35, 45, 55]
+    const mean = ages.reduce((a, b) => a + b, 0) / ages.length
+    const sumIndiv = ages.reduce((s, a) => s + rateAtAge(a, fit), 0)
+    expect(linearCohortScale(mean, ages.length, fit)).toBeCloseTo(sumIndiv, 12)
   })
 })
 

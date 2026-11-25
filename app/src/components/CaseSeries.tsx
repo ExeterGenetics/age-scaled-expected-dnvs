@@ -10,10 +10,11 @@ import {
   CASE_CONSEQUENCE_LABELS, chanceMatches, individualsNeeded, MME, MME_CASES, geneRate, median, percentileBelow,
 } from '../lib/caseseries'
 import type { CaseConsequence } from '../lib/caseseries'
-import type { Consequence, GeneRates, Sites } from '../lib/model'
+import type { Consequence, GeneRates, LinearFit, PerBin, Sites } from '../lib/model'
 import { ppoisUpper } from '../lib/poisson'
 import { Field, Genes, OffAutosome, Panel, Renames, Segmented } from './ui'
 import { TsvAgeInput } from './AgeInputs'
+import { AgeCalibrationChart } from './AgeCalibrationChart'
 import { ReportExport } from './CaseReport'
 import { BUILD, num, TOOL_NAME, TOOL_URL } from '../lib/report'
 import type { ReportRow } from '../lib/report'
@@ -50,15 +51,18 @@ const oneIn = (r: number) => `1 in ${fmtN(1 / r)}`
 const pnum = (p: number) => (p >= 0.99995 ? '> 0.9999' : num(p))
 const times = (r: number) => `${r.toFixed(r < 1 ? 2 : 1)}×`
 
-export type CaseAgeMode = 'decode' | 'normal' | 'tsv'
+export type CaseAgeMode = 'decode' | 'mean' | 'tsv'
 interface AgeProps {
   mode: CaseAgeMode
   onMode: (m: CaseAgeMode) => void
-  normal: { mean: string; sd: string }
-  onNormal: (v: { mean: string; sd: string }) => void
+  mean: string
+  onMean: (v: string) => void
   tsv: TsvState
   onTsv: (v: TsvState) => void
   summary: { ages: number[]; skipped: number } | null
+  resolvedMean: number | null
+  linearFit: LinearFit
+  perIndividualRate: PerBin
 }
 
 interface Props {
@@ -176,19 +180,23 @@ export function CaseSeries({
           <div className="field">
             <span className="flabel">Their paternal ages</span>
             <Segmented<CaseAgeMode> label="Paternal ages" value={ages.mode} onChange={ages.onMode}
-              options={[{ value: 'decode', label: 'deCODE mix' }, { value: 'normal', label: 'Mean & SD' }, { value: 'tsv', label: 'From TSV' }]} />
+              options={[{ value: 'decode', label: 'deCODE avg' }, { value: 'mean', label: 'Mean age' }, { value: 'tsv', label: 'From TSV' }]} />
           </div>
-          {ages.mode === 'normal' && (
-            <div className="row2">
-              <Field label="Mean age">
-                <input type="number" step="0.1" value={ages.normal.mean} onChange={e => ages.onNormal({ ...ages.normal, mean: e.target.value })} />
-              </Field>
-              <Field label="SD">
-                <input type="number" step="0.1" min="0" value={ages.normal.sd} onChange={e => ages.onNormal({ ...ages.normal, sd: e.target.value })} />
-              </Field>
-            </div>
+          {ages.mode === 'mean' && (
+            <Field label="Mean paternal age (yr)">
+              <input type="number" step="0.1" min="1" value={ages.mean} onChange={e => ages.onMean(e.target.value)} />
+            </Field>
           )}
           {ages.mode === 'tsv' && <TsvAgeInput value={ages.tsv} onChange={ages.onTsv} summary={ages.summary} />}
+          {ages.resolvedMean !== null && (
+            <AgeCalibrationChart
+              meanAge={ages.resolvedMean}
+              linearFit={ages.linearFit}
+              perIndividualRate={ages.perIndividualRate}
+              cohortAges={ages.mode === 'tsv' ? (ages.summary?.ages ?? null) : null}
+              compact
+            />
+          )}
           <p className="hint model-summary" title={cohortDescription ? `Rates use ${cohortDescription}.` : undefined}>
             Model: {modelSummary}. Change on the{' '}
             <button type="button" className="linklike" onClick={onCalculator}>Expected counts</button> tab.

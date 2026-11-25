@@ -1,5 +1,5 @@
-import { BACKGROUNDS, BIN_LABELS, BINS, LOF_OPTIONS } from '../lib/model'
-import type { Background, Consequence, PerBin, Sites } from '../lib/model'
+import { BACKGROUNDS, LOF_OPTIONS } from '../lib/model'
+import type { Background, Consequence, Sites } from '../lib/model'
 import { cutoffAt, MISSENSE_SCORES, SCORE_CUTOFFS, SCORE_DEFAULT_THRESHOLD } from '../lib/missense'
 import type { MissenseFilter, MissenseScore } from '../lib/missense'
 import { Field } from './ui'
@@ -14,8 +14,6 @@ interface ModelOptionsProps {
   missense: MissenseFilter
   onMissense: (f: MissenseFilter) => void
   missenseShares: { scored: number; passing: number } | null
-  nDecode: PerBin
-  onNDecode: (n: PerBin) => void
   onAbout: () => void
 }
 
@@ -52,19 +50,6 @@ export function ModelOptions(p: ModelOptionsProps) {
           If your pipeline calls hard-to-sequence regions, choose All sites: high-quality sites give lower expected
           counts and so smaller p-values. <button type="button" className="linklike" onClick={p.onAbout}>About</button>
         </p>
-        <div className="field">
-          <span className="flabel">deCODE probands per age bin (converts each k to a per-individual rate)</span>
-          <div className="ngrid">
-            {BINS.map(b => (
-              <Field key={b} label={BIN_LABELS[b]}>
-                <input
-                  type="number" min="1" step="1" value={p.nDecode[b]}
-                  onChange={e => p.onNDecode({ ...p.nDecode, [b]: Number(e.target.value) })}
-                />
-              </Field>
-            ))}
-          </div>
-        </div>
       </details>
     </>
   )

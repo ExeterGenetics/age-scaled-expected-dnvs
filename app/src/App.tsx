@@ -3,10 +3,10 @@ import { GENE_RATES, GENE_SETS, MISSENSE_BINS, RATE_GENE_INDEX } from './data/so
 import { filterLabel, filterShares, filterShortLabel, poorlyScoredGenes } from './lib/missense'
 import { parseGeneList, resolveGeneList } from './lib/genesets'
 import { ALL_GENES, CUSTOM, GeneSetPicker } from './components/GeneSetPicker'
-import { BACKGROUNDS, BIN_LABELS, BINS, cohortScale, countsFromAges, countsFromNormal } from './lib/model'
+import { BACKGROUNDS, BIN_LABELS, BINS, rateAtAge } from './lib/model'
 import type { GeneExpected, PerBin } from './lib/model'
 import { readAges } from './lib/parse'
-import { NormalAgeInput, TsvAgeInput } from './components/AgeInputs'
+import { MeanAgeInput, TsvAgeInput } from './components/AgeInputs'
 import type { TsvState } from './components/AgeInputs'
 import type { CaseAgeMode } from './components/CaseSeries'
 import { useCohortModel } from './useCohortModel'
@@ -82,8 +82,8 @@ export function App() {
   const calc = useCohortModel(true, link)
   const dnv = useCohortModel(page === 'test')
   const {
-    mode, setMode, tsv, setTsv, normal, setNormal, background, setBackground, sites, setSites,
-    lof, setLof, nDecode, setNDecode, missense, setMissense, rates, ageSummary, cohort, k, error, rows,
+    mode, setMode, tsv, setTsv, meanInput, setMeanInput, background, setBackground, sites, setSites,
+    lof, setLof, nDecode, missense, setMissense, rates, ageSummary, cohort, k, linearFit, error, rows,
   } = calc
   const [geneSetId, setGeneSetId] = useState<string>(ALL_GENES)
   const [customText, setCustomText] = useState('')
@@ -100,40 +100,36 @@ export function App() {
     () => Object.fromEntries(BINS.map(b => [b, k[b] / nDecode[b]])) as PerBin,
     [k, nDecode],
   )
-  // Case-series tab: expected DNVs per individual per unit of summed roulette rate for deCODE's
-  // own paternal-age mix (a population-typical reference, independent of the user's cohort),
-  // i.e. sum_b k_b / sum_b N_deCODE_b
-  // Case series: per-individual rate for a paternal age distribution, deCODE's own mix by default
+  // Case series: per-individual rate for a paternal age, deCODE's own mean (30.3 yr) by default
   const [caseAgeMode, setCaseAgeMode] = useState<CaseAgeMode>(link.ages?.mode ?? 'decode')
-  const [caseNormal, setCaseNormal] = useState<{ mean: string; sd: string }>(
-    link.ages?.mode === 'normal' ? { mean: link.ages.mean, sd: link.ages.sd } : { mean: '33', sd: '5.5' },
+  const [caseMean, setCaseMean] = useState<string>(
+    link.ages?.mode === 'mean' ? link.ages.mean : '33',
   )
   const [caseTsv, setCaseTsv] = useState<TsvState>({ table: null, column: 0, text: '', fileName: null })
   const caseAgeSummary = useMemo(() => (caseTsv.table ? readAges(caseTsv.table, caseTsv.column) : null), [caseTsv.table, caseTsv.column])
-  const caseAges = useMemo((): { share: PerBin; description: string } | { error: string } => {
+  const caseAges = useMemo((): { meanAge: number; description: string } | { error: string } => {
     if (caseAgeMode === 'decode') {
-      const total = BINS.reduce((s, b) => s + nDecode[b], 0)
+      const m = linearFit?.meanAge ?? 30.34
       return {
-        share: Object.fromEntries(BINS.map(b => [b, nDecode[b] / total])) as PerBin,
-        description: `deCODE's paternal age mix (${BINS.map(b => `${BIN_LABELS[b]}: ${nDecode[b].toLocaleString()}`).join(', ')} probands)`,
+        meanAge: m,
+        description: `deCODE average paternal age (${m.toFixed(1)} yr; ${BINS.map(b => `${BIN_LABELS[b]}: ${nDecode[b].toLocaleString()}`).join(', ')} probands)`,
       }
     }
-    if (caseAgeMode === 'normal') {
-      const mean = parseFloat(caseNormal.mean), sd = parseFloat(caseNormal.sd)
-      if (!Number.isFinite(mean)) return { error: 'Enter a mean paternal age.' }
-      if (!(sd > 0)) return { error: 'Enter an SD above zero.' }
-      return { share: countsFromNormal(mean, sd, 1), description: `paternal ages normal(mean ${mean}, SD ${sd})` }
+    if (caseAgeMode === 'mean') {
+      const mean = parseFloat(caseMean)
+      if (!Number.isFinite(mean) || mean <= 0) return { error: 'Enter a mean paternal age above zero.' }
+      return { meanAge: mean, description: `mean paternal age ${mean} yr` }
     }
     const ages = caseAgeSummary?.ages ?? []
     if (ages.length === 0) return { error: 'Load or paste paternal ages.' }
-    const counts = countsFromAges(ages)
+    const meanAge = ages.reduce((a, b) => a + b, 0) / ages.length
     return {
-      share: Object.fromEntries(BINS.map(b => [b, counts[b] / ages.length])) as PerBin,
-      description: `${ages.length} paternal ages from TSV`,
+      meanAge,
+      description: `${ages.length} paternal ages from TSV (mean ${meanAge.toFixed(2)} yr)`,
     }
-  }, [caseAgeMode, caseNormal, caseAgeSummary, nDecode])
-  const caseError = calc.nDecodeError ?? ('error' in caseAges ? caseAges.error : null)
-  const perIndividualScale = caseError || 'error' in caseAges ? null : cohortScale(caseAges.share, k, nDecode)
+  }, [caseAgeMode, caseMean, caseAgeSummary, nDecode, linearFit])
+  const caseError = 'error' in caseAges ? caseAges.error : null
+  const perIndividualScale = caseError || 'error' in caseAges ? null : rateAtAge(caseAges.meanAge, linearFit)
   const custom = useMemo(
     () => (geneSetId === CUSTOM ? resolveGeneList(parseGeneList(customText), RATE_GENE_INDEX, GENE_SETS.aliases) : null),
     [geneSetId, customText],
@@ -162,16 +158,16 @@ export function App() {
   )
 
   const onDownload = () => {
-    if ('error' in cohort) return
+    if ('error' in cohort || !linearFit) return
     downloadTsv(subsetRows, [
       `gene set: ${scopeLabel}` + (geneSet ? ` (${geneSet.description}; ${geneSet.source})` : '') +
         (custom ? `; ${custom.genes.length} matched, not found: ${custom.unmatched.join(', ') || 'none'}` : ''),
       `paternal ages: ${cohort.description}`,
-      `individuals per bin (${BINS.map(b => BIN_LABELS[b]).join(', ')}): ${BINS.map(b => +cohort.counts[b].toFixed(3)).join(', ')}`,
-      `k background: ${BACKGROUNDS[background]}; deCODE probands per bin: ${BINS.map(b => nDecode[b]).join(', ')}`,
+      `k background: ${BACKGROUNDS[background]}; linear fit s(age) = ${linearFit.alpha.toExponential(4)} + ${linearFit.beta.toExponential(4)} * age (R^2 = ${linearFit.r2.toFixed(4)})`,
+      `deCODE probands per bin (${BINS.map(b => BIN_LABELS[b]).join(', ')}): ${BINS.map(b => nDecode[b]).join(', ')}`,
       `sites: ${sites === 'hq' ? 'high quality (high, TFBS)' : 'all'}; LoF = ${lof.join(' + ') || 'none'}`,
       `missense: ${misQualifier ? `${misQualifier} (sites without a score excluded; missense_mostly_unscored = 1 where under half the gene's missense rate is scored)` : 'all missense sites'}`,
-      'expected = summed roulette MR x sum_bin(n_bin x k_bin / N_deCODE_bin)',
+      'expected = summed roulette MR x N x (alpha + beta x mean_paternal_age)',
     ], unscored)
   }
 
@@ -218,14 +214,16 @@ export function App() {
           cohortDescription={'error' in caseAges ? '' : caseAges.description}
           shareLink={() => `${window.location.href.split('#')[0]}#case-series?${encodeCaseLink({
             ...caseState, missense, lof, sites, background,
-            ages: caseAgeMode === 'normal' ? { mode: 'normal', ...caseNormal } : { mode: 'decode' },
+            ages: caseAgeMode === 'mean' ? { mode: 'mean', mean: caseMean } : { mode: 'decode' },
           })}`}
-          shareNote={caseAgeMode === 'tsv' ? "Ages from a TSV are not in the link; it opens with deCODE's age mix." : null}
+          shareNote={caseAgeMode === 'tsv' ? "Ages from a TSV are not in the link; it opens with deCODE's average paternal age." : null}
           modelSummary={`${BACKGROUNDS[background].replace(/ \(.*\)/, '').toLowerCase()} background, ${sites === 'hq' ? 'high-quality sites' : 'all sites'}, LoF = ${lof.map(c => c.replace('_', ' ')).join(', ') || 'none'}`}
-          modelDescription={`${BACKGROUNDS[background]} calibration background; deCODE probands per bin ${BINS.map(b => `${BIN_LABELS[b]} ${nDecode[b]}`).join(', ')}`}
+          modelDescription={`${BACKGROUNDS[background]} calibration background (continuous linear paternal-age fit); deCODE probands per bin ${BINS.map(b => `${BIN_LABELS[b]} ${nDecode[b]}`).join(', ')}`}
           ages={{
-            mode: caseAgeMode, onMode: setCaseAgeMode, normal: caseNormal, onNormal: setCaseNormal,
+            mode: caseAgeMode, onMode: setCaseAgeMode, mean: caseMean, onMean: setCaseMean,
             tsv: caseTsv, onTsv: setCaseTsv, summary: caseAgeSummary,
+            resolvedMean: 'error' in caseAges ? null : caseAges.meanAge,
+            linearFit, perIndividualRate,
           }}
           sites={sites} lof={lof} onCalculator={() => goTo('calculator')}
           rates={rates} missense={missense} onMissense={setMissense}
@@ -235,10 +233,10 @@ export function App() {
           <Panel title="Paternal ages">
             <Segmented<Mode>
               label="Age input" value={mode} onChange={setMode}
-              options={[{ value: 'normal', label: 'Mean & SD' }, { value: 'tsv', label: 'From TSV' }]}
+              options={[{ value: 'mean', label: 'Mean age' }, { value: 'tsv', label: 'From TSV' }]}
             />
-            {mode === 'normal'
-              ? <NormalAgeInput value={normal} onChange={setNormal} />
+            {mode === 'mean'
+              ? <MeanAgeInput value={meanInput} onChange={setMeanInput} />
               : <TsvAgeInput value={tsv} onChange={setTsv} summary={ageSummary} />}
             {error && <p className="err" role="alert">{error}</p>}
           </Panel>
@@ -249,7 +247,6 @@ export function App() {
               sites={sites} onSites={setSites}
               lof={lof} onLof={setLof}
               missense={missense} onMissense={setMissense} missenseShares={missenseShares}
-              nDecode={nDecode} onNDecode={setNDecode}
             />
           </Panel>
           <Panel title="Gene set">
@@ -265,8 +262,9 @@ export function App() {
           {!error && !('error' in cohort) && (
             <Panel title="Cohort">
               <CohortSummary
-                counts={cohort.counts} n={cohort.n} perIndividualRate={perIndividualRate}
-                totals={totals} integerCounts={mode === 'tsv'} scope={scope}
+                meanAge={cohort.meanAge} cohortAges={mode === 'tsv' ? (ageSummary?.ages ?? null) : null} n={cohort.n}
+                perIndividualRate={perIndividualRate} linearFit={linearFit}
+                totals={totals} scope={scope}
                 observed={observed} onObserved={setObserved}
                 alternative={alternative} onAlternative={setAlternative}
                 misQualifier={filterShortLabel(missense)}

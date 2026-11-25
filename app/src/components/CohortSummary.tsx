@@ -1,17 +1,19 @@
-import { BIN_LABELS, BINS } from '../lib/model'
-import type { PerBin } from '../lib/model'
+import { rateAtAge } from '../lib/model'
+import type { LinearFit, PerBin } from '../lib/model'
 import { Tile } from './ui'
 import { sci } from '../lib/format'
 import { ObservedTest } from './ObservedTest'
 import type { Observed } from './ObservedTest'
 import type { Alternative } from '../lib/poisson'
+import { AgeCalibrationChart } from './AgeCalibrationChart'
 
 interface CohortSummaryProps {
-  counts: PerBin
+  meanAge: number
+  cohortAges: number[] | null
   n: number
   perIndividualRate: PerBin
+  linearFit: LinearFit
   totals: { syn: number; mis: number; lof: number }
-  integerCounts: boolean
   scope: { label: string; nGenes: number } | null  // null = all genes
   observed: Observed
   onObserved: (o: Observed) => void
@@ -21,9 +23,10 @@ interface CohortSummaryProps {
 }
 
 export function CohortSummary({
-  counts, n, perIndividualRate, totals, integerCounts, scope, observed, onObserved, alternative, onAlternative, misQualifier,
+  meanAge, cohortAges, n, perIndividualRate, linearFit, totals, scope, observed, onObserved, alternative, onAlternative, misQualifier,
 }: CohortSummaryProps) {
-  const max = Math.max(...BINS.map(b => counts[b])) || 1
+  const cohortRate = rateAtAge(meanAge, linearFit)
+  const relDecode = cohortRate / rateAtAge(linearFit.meanAge, linearFit)
   return (
     <>
       <div className="totals">
@@ -45,27 +48,16 @@ export function CohortSummary({
           />
         </div>
       </div>
-      <div className="scroll">
-        <table className="bins">
-          <thead>
-            <tr>
-              <th>Paternal age</th><th>Individuals</th><th>Share</th><th className="barcell" aria-hidden />
-              <th title="k / deCODE probands: expected de novo variants per proband per unit of Roulette rate">k / N<sub>deCODE</sub></th>
-            </tr>
-          </thead>
-          <tbody>
-            {BINS.map(b => (
-              <tr key={b}>
-                <td>{BIN_LABELS[b]}</td>
-                <td>{integerCounts ? counts[b] : counts[b].toFixed(1)}</td>
-                <td>{(100 * counts[b] / n).toFixed(1)}%</td>
-                <td className="barcell"><div className="bar" style={{ width: `${100 * counts[b] / max}%` }} /></td>
-                <td>{sci(perIndividualRate[b], 4)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <AgeCalibrationChart
+        meanAge={meanAge}
+        linearFit={linearFit}
+        perIndividualRate={perIndividualRate}
+        cohortAges={cohortAges}
+      />
+      <p className="hint">
+        Per-individual scale at <b>{meanAge.toFixed(2)} yr</b>: <b>{sci(cohortRate, 4)}</b> per unit Roulette MR
+        {' '}({relDecode.toFixed(2)}× deCODE average; <code>{sci(linearFit.alpha, 3)} + {sci(linearFit.beta, 3)} × age</code>).
+      </p>
     </>
   )
 }

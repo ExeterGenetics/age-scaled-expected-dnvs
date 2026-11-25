@@ -1,12 +1,16 @@
-// Expected de novo SNV counts per gene, scaled by paternal age.
+// Expected de novo SNV counts per gene, scaled continuously by paternal age.
 //
-// For each paternal-age bin b, k_b (scaling_factors_pat_only.tsv) is the number of
-// deCODE DNMs observed at background sites divided by the summed roulette rate of
-// those sites, i.e. a cohort total. Dividing by the deCODE probands in that bin gives
-// the expected DNMs per individual per unit of roulette rate. For a cohort with n_b
-// individuals in each bin, a gene's expected count is
+// For each deCODE paternal-age bin b, s_b = k_b / N_deCODE_b is the observed
+// expected DNMs per individual per unit of Roulette rate, paired with the bin's
+// exact mean paternal age a_b (Pálsson et al. 2025 proband.info.tsv).
+// An N_deCODE_b-weighted linear regression fits s(a) = alpha + beta * a (R^2 = 0.9987
+// for the intergenic background), preserving the exact overall deCODE calibration
+// mean while eliminating open-ended tail clamping (<25, >=40). By linearity of
+// expectation, a cohort of N individuals with mean paternal age meanAge has
 //
-//   E = sum(roulette MR over the gene's sites) * sum_b n_b * k_b / N_deCODE_b
+//   E = sum(roulette MR over the gene's sites) * N * (alpha + beta * meanAge)
+//
+// regardless of the cohort's SD or skewness.
 
 export const BINS = ['lt_25', '25_29', '30_34', '35_39', 'gt_39'] as const
 export type Bin = (typeof BINS)[number]
@@ -94,7 +98,51 @@ export function countsFromNormal(mean: number, sd: number, n: number): PerBin {
   return counts
 }
 
-// Expected DNMs in the whole cohort per unit of summed roulette rate.
+export interface LinearFit {
+  alpha: number    // intercept: expected DNMs per individual per unit MR at age 0
+  beta: number     // slope: additional expected DNMs per individual per unit MR per year
+  r2: number       // N_deCODE-weighted R^2 across the 5 calibration bins
+  meanAge: number  // N_deCODE-weighted mean paternal age of deCODE calibration cohort
+}
+
+// N_deCODE-weighted ordinary least squares of s_b = k_b / N_deCODE_b on bin mean ages.
+// Guaranteed to pass through the overall deCODE cohort mean (meanAge, sum k_b / sum N_b).
+export function fitLinearRate(k: PerBin, nDecode: PerBin, binMeanAges: PerBin): LinearFit {
+  const nTot = BINS.reduce((s, b) => s + nDecode[b], 0)
+  const meanAge = BINS.reduce((s, b) => s + nDecode[b] * binMeanAges[b], 0) / nTot
+  const meanS = BINS.reduce((s, b) => s + k[b], 0) / nTot
+  let num = 0, den = 0
+  for (const b of BINS) {
+    const da = binMeanAges[b] - meanAge
+    const sb = k[b] / nDecode[b]
+    num += nDecode[b] * da * (sb - meanS)
+    den += nDecode[b] * da * da
+  }
+  const beta = den > 0 ? num / den : 0
+  const alpha = meanS - beta * meanAge
+  let ssRes = 0, ssTot = 0
+  for (const b of BINS) {
+    const sb = k[b] / nDecode[b]
+    const pred = alpha + beta * binMeanAges[b]
+    ssRes += nDecode[b] * (sb - pred) ** 2
+    ssTot += nDecode[b] * (sb - meanS) ** 2
+  }
+  const r2 = ssTot > 0 ? 1 - ssRes / ssTot : 1
+  return { alpha, beta, r2, meanAge }
+}
+
+// Expected DNMs per individual per unit of summed roulette rate at paternal age `age`.
+export function rateAtAge(age: number, fit: LinearFit): number {
+  return Math.max(0, fit.alpha + fit.beta * age)
+}
+
+// Expected DNMs in the whole cohort per unit of summed roulette rate under the linear model.
+// Exact for any paternal-age distribution with mean `meanAge` and size `n`.
+export function linearCohortScale(meanAge: number, n: number, fit: LinearFit): number {
+  return n * rateAtAge(meanAge, fit)
+}
+
+// Expected DNMs in the whole cohort per unit of summed roulette rate (5-bin step model).
 export function cohortScale(counts: PerBin, k: PerBin, nDecode: PerBin): number {
   return BINS.reduce((s, b) => s + counts[b] * k[b] / nDecode[b], 0)
 }

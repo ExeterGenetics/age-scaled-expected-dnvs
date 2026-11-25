@@ -15,7 +15,7 @@ export interface CaseLink {
   k: string
   log10N: number
   matches: string
-  ages: { mode: 'decode' } | { mode: 'normal'; mean: string; sd: string }
+  ages: { mode: 'decode' } | { mode: 'mean'; mean: string }
   missense: MissenseFilter
   lof: Consequence[]
   sites: Sites
@@ -29,7 +29,7 @@ export function encodeCaseLink(l: CaseLink): string {
   q.set('k', l.k)
   q.set('n', String(Math.round(10 ** l.log10N)))
   q.set('m', l.matches)
-  q.set('age', l.ages.mode === 'decode' ? 'decode' : `${l.ages.mean},${l.ages.sd}`)
+  q.set('age', l.ages.mode === 'decode' ? 'decode' : l.ages.mean)
   q.set('f', l.missense.score === 'none' ? 'none' : `${l.missense.score}:${l.missense.threshold}`)
   q.set('lof', l.lof.join(','))
   q.set('s', l.sites)
@@ -54,8 +54,9 @@ export function decodeCaseLink(query: string): Partial<CaseLink> {
   const age = q.get('age')
   if (age === 'decode') out.ages = { mode: 'decode' }
   else if (age) {
-    const [mean, sd] = age.split(',')
-    if (num(mean) && num(sd)) out.ages = { mode: 'normal', mean, sd }
+    // accepts current "mean" and legacy "mean,sd" links
+    const [mean] = age.split(',')
+    if (num(mean) && Number(mean) > 0) out.ages = { mode: 'mean', mean }
   }
   const f = q.get('f')
   if (f === 'none') out.missense = NO_FILTER

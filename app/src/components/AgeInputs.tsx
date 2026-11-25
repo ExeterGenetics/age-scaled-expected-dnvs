@@ -10,9 +10,8 @@ export interface TsvState {
   fileName: string | null
 }
 
-export interface NormalState {
+export interface MeanAgeState {
   mean: string
-  sd: string
   n: string
 }
 
@@ -63,19 +62,23 @@ export function TsvAgeInput({ value, onChange, summary }: TsvAgeInputProps) {
   )
 }
 
-export function NormalAgeInput({ value, onChange }: { value: NormalState; onChange: (v: NormalState) => void }) {
-  const set = (key: keyof NormalState) => (e: ChangeEvent<HTMLInputElement>) =>
+export function MeanAgeInput({ value, onChange }: { value: MeanAgeState; onChange: (v: MeanAgeState) => void }) {
+  const set = (key: keyof MeanAgeState) => (e: ChangeEvent<HTMLInputElement>) =>
     onChange({ ...value, [key]: e.target.value })
 
   return (
     <>
       <div className="row2">
-        <Field label="Mean age"><input type="number" step="0.1" value={value.mean} onChange={set('mean')} /></Field>
-        <Field label="SD"><input type="number" step="0.1" min="0" value={value.sd} onChange={set('sd')} /></Field>
+        <Field label="Mean paternal age (yr)">
+          <input type="number" step="0.1" min="1" value={value.mean} onChange={set('mean')} />
+        </Field>
+        <Field label="Number of individuals">
+          <input type="number" step="1" min="1" value={value.n} onChange={set('n')} />
+        </Field>
       </div>
-      <Field label="Number of individuals">
-        <input type="number" step="1" min="1" value={value.n} onChange={set('n')} />
-      </Field>
+      <p className="hint">
+        Continuous linear scaling depends only on the cohort mean paternal age (no SD or normality assumption needed).
+      </p>
     </>
   )
 }

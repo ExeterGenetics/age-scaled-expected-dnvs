@@ -20,13 +20,25 @@ export const NON_AUTOSOMAL: Record<string, string> = GENE_SETS.non_autosomal ?? 
 export const RATE_GENE_INDEX = new Map(GENE_RATES.map(g => [g.gene.toUpperCase(), g.gene]))
 
 // deCODE probands per paternal-age bin, the denominators that turn each k (a cohort
-// total) into a per-individual rate. These are not in scaling_factors_pat_only.tsv
-// and could not be recomputed here (the dnm_input_file_* tables carry no proband
-// IDs). They imply 55, 64, 72, 82 and 95 DNMs per proband across the bins, a smooth
-// paternal-age gradient. Editable in the UI.
+// total) into a per-individual rate. Editable in the UI.
 export const DEFAULT_N_DECODE: PerBin = {
   lt_25: 1153, '25_29': 1528, '30_34': 1391, '35_39': 808, gt_39: 518,
 }
+
+// Exact mean paternal age at birth within each deCODE paternal-age bin, from
+// Pálsson et al. 2025 proband.info.tsv (n = 5,420 probands; overall mean 30.34 yr).
+export const DECODE_BIN_MEAN_AGE: PerBin = {
+  lt_25: 22.118002, '25_29': 27.061318, '30_34': 31.867384, '35_39': 36.683107, gt_39: 44.415385,
+}
+
+// Exact integer-year paternal-age counts in Pálsson et al. 2025 proband.info.tsv (n = 5,420,
+// ages 16..71) for plotting where a user's cohort sits on the calibration distribution.
+export const DECODE_AGE_MIN = 16
+export const DECODE_AGE_HIST: readonly number[] = [
+  1, 3, 37, 55, 112, 149, 263, 238, 303, 248, 345, 282, 381, 277, 348, 261, 286, 228, 272, 200,
+  216, 133, 165, 97, 118, 75, 55, 45, 31, 40, 23, 25, 17, 19, 7, 14, 9, 7, 11, 4, 4, 4, 1, 2, 3,
+  0, 3, 0, 1, 0, 1, 0, 0, 0, 0, 1,
+]
 
 // Versions of every data source, for About and exported reports. Update with the data.
 export const DATA_VERSIONS: [string, string][] = [

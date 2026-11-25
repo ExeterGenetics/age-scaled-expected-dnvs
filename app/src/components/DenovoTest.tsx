@@ -5,12 +5,14 @@ import type { GeneSet, ResolvedList } from '../lib/genesets'
 import { splitUnmatched } from '../lib/genesets'
 import { filterLabel, filterShares, MISSENSE_SCORES } from '../lib/missense'
 import type { MissenseFilter } from '../lib/missense'
-import type { GeneExpected } from '../lib/model'
+import { BINS } from '../lib/model'
+import type { GeneExpected, PerBin } from '../lib/model'
 import { count, fmtP, fmtR } from '../lib/format'
 import { downloadText } from '../lib/report'
 import { GENE_RATES, MISSENSE_BINS, NON_AUTOSOMAL } from '../data/sources'
 import type { CohortModel, Mode } from '../useCohortModel'
-import { NormalAgeInput, TsvAgeInput } from './AgeInputs'
+import { MeanAgeInput, TsvAgeInput } from './AgeInputs'
+import { AgeCalibrationChart } from './AgeCalibrationChart'
 import { ALL_GENES, CUSTOM, GeneSetPicker } from './GeneSetPicker'
 import { ModelOptions } from './ModelOptions'
 import { Field, Genes, OffAutosome, Panel, Renames, Segmented, useFileInput } from './ui'
@@ -64,8 +66,8 @@ export function DenovoTest({ value, onChange, model: m, resolve, geneSets, resol
   const onExample = async () => {
     const text = (await import('../../../data/examples/kaplanis2020_dnvs.tsv?raw')).default
     onChange({ ...value, text, fileName: EXAMPLE_NAME })
-    m.setMode('normal')
-    m.setNormal(v => ({ ...v, n: String(EXAMPLE_N) }))
+    m.setMode('mean')
+    m.setMeanInput(v => ({ ...v, n: String(EXAMPLE_N) }))
   }
 
   return (
@@ -101,11 +103,20 @@ export function DenovoTest({ value, onChange, model: m, resolve, geneSets, resol
         <Panel title="Paternal ages">
           <Segmented<Mode>
             label="Age input" value={m.mode} onChange={m.setMode}
-            options={[{ value: 'normal', label: 'Mean & SD' }, { value: 'tsv', label: 'From TSV' }]}
+            options={[{ value: 'mean', label: 'Mean age' }, { value: 'tsv', label: 'From TSV' }]}
           />
-          {m.mode === 'normal'
-            ? <NormalAgeInput value={m.normal} onChange={m.setNormal} />
+          {m.mode === 'mean'
+            ? <MeanAgeInput value={m.meanInput} onChange={m.setMeanInput} />
             : <TsvAgeInput value={m.tsv} onChange={m.setTsv} summary={m.ageSummary} />}
+          {!('error' in m.cohort) && (
+            <AgeCalibrationChart
+              meanAge={m.cohort.meanAge}
+              linearFit={m.linearFit}
+              perIndividualRate={Object.fromEntries(BINS.map(b => [b, m.k[b] / m.nDecode[b]])) as PerBin}
+              cohortAges={m.mode === 'tsv' ? (m.ageSummary?.ages ?? null) : null}
+              compact
+            />
+          )}
           {m.error && <p className="err" role="alert">{m.error}</p>}
         </Panel>
         <Panel title="Model">
@@ -115,7 +126,6 @@ export function DenovoTest({ value, onChange, model: m, resolve, geneSets, resol
             sites={m.sites} onSites={m.setSites}
             lof={m.lof} onLof={m.setLof}
             missense={m.missense} onMissense={m.setMissense} missenseShares={shares}
-            nDecode={m.nDecode} onNDecode={m.setNDecode}
           />
         </Panel>
         {result && 'error' in result && (
