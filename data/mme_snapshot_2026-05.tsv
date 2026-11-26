@@ -1,0 +1,16 @@
+# Archived Matchmaker Exchange (MME) statistics snapshot
+# Source: https://www.matchmakerexchange.org/statistics.html ("Patients/Cases in MME" column)
+# Snapshot date: May 2026
+# Total entries across nodes: 187,719
+# Note: Live MME totals change over time (e.g., 195,798 on subsequent retrieval) and node totals
+# do not represent deduplicated, unselected trios screened uniformly for a prespecified gene/class.
+node	cases
+GeneMatcher	109794
+DECIPHER	52543
+PhenomeCentral	12369
+RD-Connect GPAP	8726
+MyGene2	2444
+Broad seqr	1746
+IRUD	62
+PatientMatcher	48
+BCH seqr	27

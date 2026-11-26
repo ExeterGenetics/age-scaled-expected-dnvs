@@ -353,8 +353,9 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
           <tbody><tr><td>Probability</td>{[1, 2, 3, 5, 10].map(j => <td key={j}>{fmtP(ppoisUpper(j, gmExp))}</td>)}</tr></tbody>
         </table></div>
         <p className="hint">
-          Each case counted as one random individual; a rough lower bound, as cases are chosen for candidate variants.
-          Phenotypes are not taken into account.
+          Hypothetical cohort calculation treating each node entry as one random trio; duplicate submissions, candidate
+          selection, and variable sequencing/reporting leave the net direction of bias uncertain. Phenotypes are not
+          taken into account.
         </p>
         <details className="mme-nodes">
           <summary>Cases per node</summary>
@@ -383,7 +384,7 @@ function Results({ genes, scale, k, N, matches, matchesText, onMatches, baseline
           'Probabilities are per gene set as entered; correct for multiple testing if several genes or sets were considered.',
           'The number of individuals sequenced is an estimate; the chart shows how the probability depends on it.',
           'Chance is for unselected individuals; cases ascertained on a distinctive phenotype are less likely to be chance.',
-          'Matchmaker Exchange: each case counted as one random individual; cases are chosen for candidate variants, so this is a lower bound.',
+          'Matchmaker Exchange: hypothetical cohort calculation treating each node entry as one random trio; duplicate submissions, candidate selection and variable reporting leave the net direction of bias uncertain.',
           'Autosomal SNVs only: indels and genes on X, Y or MT are not modelled.',
         ]}
       />

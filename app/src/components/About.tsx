@@ -175,13 +175,13 @@ export function About() {
         </dd>
         <dt>Matchmaker Exchange</dt>
         <dd>
-          The cases in Matchmaker Exchange nodes (the &quot;Patients/Cases in MME&quot; column of the network's statistics
-          page, copied by hand: the MME API matches individual patients and has no statistics endpoint) are treated as
-          a cohort of that many random individuals, at the chance rate above for missense (with the filter) or LoF,
-          as matches are gene-level. Submitters choose people who already have a candidate variant, so chance matches
-          can be more common than this and the probabilities are a lower bound. Cases include inherited and recessive
-          candidates, favour known disease genes, and some patients are in more than one node, so treat it as a rough
-          guide. A match is only evidence if the phenotype fits better than a random proband's would.
+          The entries in Matchmaker Exchange nodes (the &quot;Patients/Cases in MME&quot; column of the network&apos;s statistics
+          page, archived from May 2026 as the MME API has no live statistics endpoint) are used as a hypothetical cohort
+          of that many random individuals, at the chance rate above for missense (with the filter) or LoF, as matches
+          are gene-level. Duplicate submissions across nodes, selection for candidate variants, non-trio or inherited
+          cases, and variable sequencing and reporting leave the net direction of bias uncertain, so treat this strictly
+          as an approximate reference rather than a bound. A match is only evidence if the phenotype fits better than a
+          random proband&apos;s would.
         </dd>
       </dl>
 

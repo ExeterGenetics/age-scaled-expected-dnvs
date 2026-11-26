@@ -69,8 +69,26 @@ def main(supp, revel_path, am_path, chain, out):
     def fmt(col, dp):
         return pl.col(col).round(dp).cast(pl.Utf8).alias(col)
 
+    # Relabel non-SNVs (indels/MNVs with REF or ALT longer than 1 base) so that
+    # indels carrying stop_gained/splice/missense/synonymous VEP labels are not
+    # miscounted as SNVs by denovo.ts (frameshift/inframe labels are preserved).
+    is_snv = (
+        (pl.col("ref").str.len_chars() == 1)
+        & (pl.col("alt").str.len_chars() == 1)
+        & pl.col("ref").is_in(["A", "C", "G", "T"])
+        & pl.col("alt").is_in(["A", "C", "G", "T"])
+        & (pl.col("ref") != pl.col("alt"))
+    )
+    keeps_indel_label = pl.col("consequence").str.contains("(?i)frameshift|inframe|indel")
     res = (d.join(scores, on=KEY, how="left")
-            .with_columns(fmt("am_pathogenicity", 4), fmt("REVEL", 3))
+            .with_columns(
+                pl.when(is_snv | keeps_indel_label)
+                  .then(pl.col("consequence"))
+                  .otherwise(pl.lit("indel"))
+                  .alias("consequence"),
+                fmt("am_pathogenicity", 4),
+                fmt("REVEL", 3),
+            )
             .group_by(pl.col("symbol").alias("gene"), "consequence", "am_pathogenicity", "REVEL")
             .agg(pl.len().alias("n"))
             .sort(["gene", "consequence", "am_pathogenicity", "REVEL"], nulls_last=True))
